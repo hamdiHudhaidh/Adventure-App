@@ -1,7 +1,14 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  output: "export",
+  basePath: "/Adventure-App",
+  assetPrefix: "/Adventure-App",
+  images: {
+    unoptimized: true,
+  },
+  // Helps GitHub Pages serve directory URLs like /Adventure-App/
+  trailingSlash: true,
 };
 
 export default nextConfig;
