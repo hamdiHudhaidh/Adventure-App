@@ -3,6 +3,7 @@
 :root {
   --background: #09090b;
   --foreground: #f4f4f5;
+  --neon-yellow: #f5ff00;
 }
 
 @theme inline {
@@ -10,6 +11,7 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-game: var(--font-game);
 }
 
 html,
@@ -26,6 +28,64 @@ body {
 .leaflet-container {
   height: 100%;
   width: 100%;
-  background: #18181b;
+  background: #09090b;
   font: inherit;
+}
+
+.leaflet-tooltip.map-label {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  color: var(--neon-yellow);
+  font-family: var(--font-game), "Orbitron", system-ui, sans-serif;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-shadow:
+    0 0 6px rgba(245, 255, 0, 0.55),
+    0 0 14px rgba(245, 255, 0, 0.25),
+    0 1px 2px rgba(0, 0, 0, 0.85);
+  padding: 0;
+  margin: 0;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.leaflet-tooltip.map-label::before {
+  display: none;
+}
+
+.map-label--country {
+  font-size: 11px;
+}
+
+.map-label--region {
+  font-size: 10px;
+}
+
+.map-label--city {
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+}
+
+.map-city-marker {
+  background: transparent !important;
+  border: none !important;
+}
+
+.map-city-marker .map-label {
+  display: inline-block;
+  transform: translate(-50%, -50%);
+  color: var(--neon-yellow);
+  font-family: var(--font-game), "Orbitron", system-ui, sans-serif;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-shadow:
+    0 0 6px rgba(245, 255, 0, 0.55),
+    0 0 14px rgba(245, 255, 0, 0.25),
+    0 1px 2px rgba(0, 0, 0, 0.85);
+  white-space: nowrap;
+  pointer-events: none;
 }
