@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import adventureStyle from "@/lib/adventureMapStyle.json";
+import type { MapLoadStatus, MapViewport } from "./MapHud";
 
 const WORLD_CENTER: [number, number] = [20, 0];
 const WORLD_ZOOM = 2.2;
@@ -12,13 +13,20 @@ const MAPLIBRE_CSS = "https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css";
 const TILE_URL =
   "https://tiles.openfreemap.org/planet/20260913_164504_pt/{z}/{x}/{y}.pbf";
 
+type MapInstance = {
+  addControl: (control: unknown, position?: string) => void;
+  on: (event: string, handler: (e?: { error?: { message?: string } }) => void) => void;
+  off: (event: string, handler: (e?: { error?: { message?: string } }) => void) => void;
+  remove: () => void;
+  resize: () => void;
+  getZoom: () => number;
+  getCenter: () => { lng: number; lat: number };
+};
+
 type MapLibreNS = {
-  Map: new (options: Record<string, unknown>) => {
-    addControl: (control: unknown, position?: string) => void;
-    on: (event: string, handler: (e?: { error?: { message?: string } }) => void) => void;
-    remove: () => void;
-  };
+  Map: new (options: Record<string, unknown>) => MapInstance;
   NavigationControl: new (options?: Record<string, unknown>) => unknown;
+  ScaleControl: new (options?: Record<string, unknown>) => unknown;
 };
 
 declare global {
@@ -64,14 +72,28 @@ function loadMapLibre(): Promise<MapLibreNS> {
   });
 }
 
-export default function MapView() {
+function readViewport(map: MapInstance): MapViewport {
+  const center = map.getCenter();
+  return { zoom: map.getZoom(), lat: center.lat, lng: center.lng };
+}
+
+export default function MapView({
+  onViewportChange,
+  onStatusChange,
+}: {
+  onViewportChange: (viewport: MapViewport) => void;
+  onStatusChange: (status: MapLoadStatus, error: string | null) => void;
+}) {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const mapRef = useRef<{ remove: () => void } | null>(null);
-  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
-  const [error, setError] = useState<string | null>(null);
+  const mapRef = useRef<MapInstance | null>(null);
+  const onViewportChangeRef = useRef(onViewportChange);
+  const onStatusChangeRef = useRef(onStatusChange);
+  onViewportChangeRef.current = onViewportChange;
+  onStatusChangeRef.current = onStatusChange;
 
   useEffect(() => {
     let cancelled = false;
+    let handleResize: (() => void) | null = null;
 
     async function boot() {
       try {
@@ -113,27 +135,41 @@ export default function MapView() {
           }),
           "bottom-right",
         );
+        map.addControl(
+          new maplibregl.ScaleControl({ maxWidth: 110, unit: "metric" }),
+          "bottom-left",
+        );
+
+        const emitViewport = () => {
+          if (!cancelled) onViewportChangeRef.current(readViewport(map));
+        };
 
         map.on("load", () => {
-          if (!cancelled) setStatus("ready");
+          if (cancelled) return;
+          emitViewport();
+          onStatusChangeRef.current("ready", null);
         });
+
+        map.on("move", emitViewport);
+
+        const handleWindowResize = () => map.resize();
+        handleResize = handleWindowResize;
+        window.addEventListener("resize", handleWindowResize);
 
         map.on("error", (event) => {
           const message = event?.error?.message || "Map failed to load tiles";
-          // Ignore benign tile misses; surface real style/worker failures
           if (/AJAXError|Failed to fetch|worker|WebGL|style/i.test(message)) {
-            if (!cancelled) {
-              setStatus("error");
-              setError(message);
-            }
+            if (!cancelled) onStatusChangeRef.current("error", message);
           }
         });
 
         mapRef.current = map;
       } catch (err: unknown) {
         if (!cancelled) {
-          setStatus("error");
-          setError(err instanceof Error ? err.message : "Map failed to start");
+          onStatusChangeRef.current(
+            "error",
+            err instanceof Error ? err.message : "Map failed to start",
+          );
         }
       }
     }
@@ -142,29 +178,18 @@ export default function MapView() {
 
     return () => {
       cancelled = true;
+      if (handleResize) window.removeEventListener("resize", handleResize);
       mapRef.current?.remove();
       mapRef.current = null;
     };
   }, []);
 
   return (
-    <div className="relative h-full w-full bg-[#0a0a0a]">
-      <div
-        ref={containerRef}
-        className="adventure-map h-full w-full bg-[#0a0a0a]"
-        role="application"
-        aria-label="Adventure world map"
-      />
-      {status === "loading" ? (
-        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-[#0a0a0a]/70 font-[family-name:var(--font-game)] text-sm tracking-[0.18em] text-[#F5FF00] uppercase">
-          Loading map…
-        </div>
-      ) : null}
-      {status === "error" && error ? (
-        <div className="absolute inset-x-4 bottom-6 z-20 rounded-md border border-red-400/40 bg-zinc-950/90 px-4 py-3 text-center text-sm text-red-300 backdrop-blur">
-          {error}
-        </div>
-      ) : null}
-    </div>
+    <div
+      ref={containerRef}
+      className="adventure-map h-full w-full bg-[#050506]"
+      role="application"
+      aria-label="Adventure world map"
+    />
   );
 }
