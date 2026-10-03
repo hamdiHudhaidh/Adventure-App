@@ -23,6 +23,8 @@ export default function MissionTracker({
   onLocateStep,
   onClose,
   header,
+  captureCount,
+  onCapture,
 }: {
   adventures: Adventure[];
   activeId: string;
@@ -36,6 +38,8 @@ export default function MissionTracker({
   onLocateStep: (step: AdventureStep) => void;
   onClose: () => void;
   header?: ReactNode;
+  captureCount?: (step: AdventureStep) => number;
+  onCapture?: (step: AdventureStep, files: File[]) => void;
 }) {
   const adventure = adventures.find((a) => a.id === activeId) ?? adventures[0];
   const [checking, setChecking] = useState<string | null>(null);
@@ -130,6 +134,24 @@ export default function MissionTracker({
                 ) : null}
               </>
             ) : null}
+            {s.capture && onCapture && (st === "available" || st === "done") ? (
+              <label className="hud-btn hud-btn-sm capture-btn">
+                🎬 {s.capture.kind === "video" ? "Add video" : s.capture.kind === "photo" ? "Add photo" : "Add photo/video"}
+                {captureCount?.(s) ? ` · ${captureCount(s)}` : ""}
+                <input
+                  type="file"
+                  hidden
+                  multiple
+                  accept={s.capture.kind === "video" ? "video/*" : s.capture.kind === "photo" ? "image/*" : "image/*,video/*"}
+                  onChange={(e) => {
+                    const files = Array.from(e.target.files ?? []);
+                    e.target.value = "";
+                    if (files.length) onCapture(s, files);
+                  }}
+                />
+              </label>
+            ) : null}
+            {s.capture?.prompt && st !== "locked" ? <p className="w-full text-xs text-sky-300">Recap shot: {s.capture.prompt}</p> : null}
             {hint?.stepId === s.id ? <p className="w-full text-xs text-amber-300">{hint.text}</p> : null}
           </>
         )}

@@ -1,5 +1,5 @@
 import { PLACES } from "./places";
-import type { ActivityEntry, Adventure, AdventureStep, AppState, LngLat, Membership, Photo, Reward, StepProgress, Team } from "./types";
+import type { ActivityEntry, Adventure, Capture, AdventureStep, AppState, LngLat, Membership, Photo, Reward, StepProgress, Team } from "./types";
 
 export const SCHEMA_VERSION = 1;
 
@@ -76,6 +76,19 @@ const diriyahSteps: AdventureStep[] = [
   step("st-edge", "Race to the Edge", "All teams race to the cliff marker. Bring the flag and the chronicle.", PLACES.edge, ["st-sands", "st-chronicle"], [r("badge", "Edge runner"), r("xp", "XP", 300)]),
   step("st-fireside", "Fireside", "Cook together, share stories and watch the recap film.", PLACES.camp, ["st-edge"], [r("badge", "Storyteller")]),
 ];
+
+// Steps that collect media for the recap film.
+const capturePrompts: Record<string, string> = {
+  "st-rally": "Group photo under the gate",
+  "st-wadi": "Your cairn and car name",
+  "st-sands": "Flags in hand — action shot",
+  "st-chronicle": "The riddle wall",
+  "st-edge": "The cliff at golden hour",
+  "st-fireside": "Fireside faces",
+};
+diriyahSteps.forEach((st) => {
+  if (capturePrompts[st.id]) st.capture = { kind: "any", prompt: capturePrompts[st.id] };
+});
 
 const crimsonSteps: AdventureStep[] = [
   step("st-cr-1", "Engines on", "Check tyre pressure and pick your navigator.", null, [], [r("item", "Map scroll")]),
@@ -168,6 +181,33 @@ const seedActivity: ActivityEntry[] = seedProgress.map((p, i) => ({
   at: p.completedAt,
 }));
 
+// Media captured during the Oct 1 test run (the sample photos).
+const capturePlan: [string, string, string][] = [
+  ["st-rally", "ph-masmak-1", "tm-falcon"],
+  ["st-rally", "ph-masmak-2", "tm-oryx"],
+  ["st-wadi", "ph-wadi-1", "tm-oryx"],
+  ["st-wadi", "ph-wadi-2", "tm-falcon"],
+  ["st-sands", "ph-dunes-1", "tm-falcon"],
+  ["st-sands", "ph-dunes-2", "tm-scorpion"],
+  ["st-chronicle", "ph-turaif-2", "tm-scorpion"],
+  ["st-edge", "ph-edge-1", "tm-oryx"],
+  ["st-fireside", "ph-camp-1", "tm-scorpion"],
+];
+
+const seedCaptures: Capture[] = capturePlan.map(([stepId, photoId, partyId], i) => {
+  const photo = seedPhotos.find((p) => p.id === photoId)!;
+  return {
+    id: `cap-seed-${i}`,
+    adventureId: FIRST_ADVENTURE_ID,
+    stepId,
+    partyId,
+    userId: `player-${photo.authorName.toLowerCase()}`,
+    userName: photo.authorName,
+    media: photo.media,
+    at: photo.takenAt ?? photo.createdAt,
+  };
+});
+
 export function createSeedState(): AppState {
   return {
     schema: SCHEMA_VERSION,
@@ -179,5 +219,8 @@ export function createSeedState(): AppState {
     activity: structuredClone(seedActivity),
     positions: [],
     notices: [],
+    captures: structuredClone(seedCaptures),
+    recaps: [],
+    deliveries: [],
   };
 }

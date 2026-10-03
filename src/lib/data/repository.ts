@@ -19,6 +19,9 @@ import type {
   AdventureControl,
   AdventureStep,
   AppState,
+  Capture,
+  RecapCut,
+  ReleasedRecap,
   PlayerPosition,
   LngLat,
   Team,
@@ -79,6 +82,16 @@ export interface AdventureRepository {
     setPosition(pos: Omit<PlayerPosition, "at">): void;
     clearPosition(userId: string, adventureId: string): void;
     notify(adventureId: string, partyId: string | null, text: string, from: string): void;
+  };
+  captures: {
+    add(input: Omit<Capture, "id" | "at">): Capture;
+    remove(id: string): void;
+  };
+  recap: {
+    saveDraft(adventureId: string, cut: RecapCut): void;
+    /** Snapshot the draft as the final cut and deliver it to every participant. */
+    release(adventureId: string, actor: string): ReleasedRecap;
+    markSeen(deliveryId: string): void;
   };
   people: {
     /** Keep denormalised names in sync after a profile rename. */
@@ -249,6 +262,9 @@ function createLocalRepository(): AdventureRepository {
           adventures: s.adventures.filter((a) => a.id !== id),
           memberships: s.memberships.filter((m) => m.adventureId !== id),
           progress: s.progress.filter((p) => p.adventureId !== id),
+          captures: s.captures.filter((c) => c.adventureId !== id),
+          recaps: s.recaps.filter((r) => r.adventureId !== id),
+          deliveries: s.deliveries.filter((d) => d.adventureId !== id),
         }));
       },
       join(adventureId, user, teamId) {
@@ -373,6 +389,101 @@ function createLocalRepository(): AdventureRepository {
             { adventureId, partyId, actor: from, kind: "notice", text: `sent “${text}”` },
           ),
         );
+      },
+    },
+    captures: {
+      add(input) {
+        const capture: Capture = { ...input, id: newId("cap"), at: new Date().toISOString() };
+        mutate((s) =>
+          withActivity(
+            { ...s, captures: [...s.captures, capture] },
+            {
+              adventureId: input.adventureId,
+              partyId: input.partyId,
+              actor: input.userName,
+              kind: "step",
+              text: `captured a ${input.media.kind} at “${stepTitle(s, input.adventureId, input.stepId)}”`,
+            },
+          ),
+        );
+        return capture;
+      },
+      remove(id) {
+        const target = current().captures.find((c) => c.id === id);
+        if (target?.media.source === "local") {
+          // Keep the blob if a released film still uses it.
+          const used = current().recaps.some((r) => r.released?.clips.some((c) => c.captureId === id));
+          if (!used) void deleteBlob(target.media.blobId);
+        }
+        mutate((s) => ({
+          ...s,
+          captures: s.captures.filter((c) => c.id !== id),
+          recaps: s.recaps.map((r) => ({ ...r, draft: { ...r.draft, clips: r.draft.clips.filter((c) => c.captureId !== id) } })),
+        }));
+      },
+    },
+    recap: {
+      saveDraft(adventureId, cut) {
+        mutate((s) => {
+          const existing = s.recaps.find((r) => r.adventureId === adventureId);
+          const next = { adventureId, draft: cut, released: existing?.released ?? null, updatedAt: new Date().toISOString() };
+          return { ...s, recaps: [...s.recaps.filter((r) => r.adventureId !== adventureId), next] };
+        });
+      },
+      release(adventureId, actor) {
+        const s0 = current();
+        const recap = s0.recaps.find((r) => r.adventureId === adventureId);
+        if (!recap || !recap.draft.clips.length) throw new Error("Add at least one clip before releasing.");
+        const released: ReleasedRecap = {
+          ...structuredClone(recap.draft),
+          version: (recap.released?.version ?? 0) + 1,
+          releasedAt: new Date().toISOString(),
+          releasedBy: actor,
+        };
+        const members = s0.memberships.filter((m) => m.adventureId === adventureId);
+        mutate((s) => {
+          const deliveries = [
+            ...s.deliveries.filter((d) => d.adventureId !== adventureId),
+            ...members.map((m) => ({
+              id: newId("dl"),
+              adventureId,
+              userId: m.userId,
+              version: released.version,
+              deliveredAt: released.releasedAt,
+              seenAt: null,
+            })),
+          ];
+          const next: AppState = {
+            ...s,
+            recaps: s.recaps.map((r) => (r.adventureId === adventureId ? { ...r, released, updatedAt: released.releasedAt } : r)),
+            deliveries,
+            notices: [
+              ...s.notices,
+              {
+                id: newId("nt"),
+                adventureId,
+                partyId: null,
+                from: actor,
+                text: `Your recap film “${released.title}” is ready 🎬`,
+                at: released.releasedAt,
+              },
+            ].slice(-100),
+          };
+          return withActivity(next, {
+            adventureId,
+            partyId: null,
+            actor,
+            kind: "admin",
+            text: `released the recap film (v${released.version}) to ${members.length} players`,
+          });
+        });
+        return released;
+      },
+      markSeen(deliveryId) {
+        mutate((s) => ({
+          ...s,
+          deliveries: s.deliveries.map((d) => (d.id === deliveryId && !d.seenAt ? { ...d, seenAt: new Date().toISOString() } : d)),
+        }));
       },
     },
     people: {

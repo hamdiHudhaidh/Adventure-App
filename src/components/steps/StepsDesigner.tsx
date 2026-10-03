@@ -89,6 +89,7 @@ export default function StepsDesigner({
                 <span className="step-row-title block truncate">{s.title || "Untitled step"}</span>
                 <span className="step-row-meta block truncate">
                   {s.lngLat ? s.placeName || formatLngLat(s.lngLat) : "No location"} · {s.prerequisites.length} prereq · {s.rewards.length} rewards
+                  {s.capture ? " · 🎬 media" : ""}
                 </span>
               </span>
               <IconChevron size={16} className={s.id === selectedId ? "rotate-90" : ""} />
@@ -205,6 +206,39 @@ export default function StepsDesigner({
                       Add
                     </button>
                   </form>
+                </div>
+
+                <div className="hud-field">
+                  <span>Recap film</span>
+                  <label className="hud-check">
+                    <input
+                      type="checkbox"
+                      checked={!!s.capture}
+                      onChange={(e) =>
+                        patch(s.id, { capture: e.target.checked ? { kind: "any", prompt: "" } : null })
+                      }
+                    />
+                    <span>Collect photos/videos at this step</span>
+                  </label>
+                  {s.capture ? (
+                    <div className="mt-1 grid grid-cols-[110px_1fr] gap-2">
+                      <select
+                        value={s.capture.kind}
+                        aria-label="Capture type"
+                        onChange={(e) => patch(s.id, { capture: { ...s.capture!, kind: e.target.value as "photo" | "video" | "any" } })}
+                      >
+                        <option value="any">Photo or video</option>
+                        <option value="photo">Photo</option>
+                        <option value="video">Video</option>
+                      </select>
+                      <input
+                        value={s.capture.prompt}
+                        maxLength={60}
+                        placeholder="Shot prompt, e.g. Team photo at the gate"
+                        onChange={(e) => patch(s.id, { capture: { ...s.capture!, prompt: e.target.value } })}
+                      />
+                    </div>
+                  ) : null}
                 </div>
 
                 <div className="flex flex-wrap gap-2 pt-1">

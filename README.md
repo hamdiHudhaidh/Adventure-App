@@ -14,6 +14,7 @@ Gamified adventure map app (Next.js static export + MapLibre, served on GitHub P
 | 6 | `feature/teams-capacity` | Admin sets **number of players** and **number of teams** |
 | 7 | `feature/player-accounts` | Players **sign up** with name + profile picture, add photos, join missions |
 | 8 | `feature/live-control` | Admin **live control**: every team's progress; advance / unlock / pause; messages |
+| 9 | `feature/recap-film` | Steps collect photos/videos → admin edits the **recap film** → **Release** to every participant |
 
 ### Feature 2 — Photo map (`feature/photo-map`)
 
@@ -83,6 +84,20 @@ Gamified adventure map app (Next.js static export + MapLibre, served on GitHub P
   *Share live location* (Mission tracker) or **Simulate crew positions** for demos.
 - Open the same preview in two tabs (admin + player) — changes sync instantly between tabs
   via `storage` events. Multi-device sync needs the future backend.
+
+### Feature 9 — Recap film (`feature/recap-film`)
+
+- Mission designer: tick **Collect photos/videos at this step** (photo / video / either + a shot prompt).
+- Players on that step get **🎬 Add photo/video** in their Mission tracker; captures are tagged with
+  step, team and player (stored in IndexedDB).
+- Admin: dossier → **Recap film** — *Auto-assemble from captures* (step order), then edit the final
+  cut: reorder, remove, add clips, caption each clip, set durations and video start offsets, title
+  and subtitle. **Preview** plays the film (title card → clips with Ken Burns motion and captions →
+  “Mission complete” credits).
+- **Release** snapshots the cut and delivers it in-app to every participant: a message + a **Films**
+  dock inbox with a *New* badge. Editing later and releasing again sends v2.
+- Films are assembled client-side on a canvas; **Save as video** records an MP4/WebM with
+  MediaRecorder (real-time, no audio yet).
 
 ### Data layer (mock, swappable for Supabase)
 

@@ -56,7 +56,11 @@ export type AdventureStep = {
   /** Step ids that must be completed first. */
   prerequisites: string[];
   rewards: Reward[];
+  /** When set, players are asked to capture media here for the recap film. */
+  capture?: StepCapture | null;
 };
+
+export type StepCapture = { kind: "photo" | "video" | "any"; prompt: string };
 
 export type Team = { id: string; name: string; color: string };
 
@@ -104,6 +108,53 @@ export type AppState = {
   activity: ActivityEntry[];
   positions: PlayerPosition[];
   notices: Notice[];
+  captures: Capture[];
+  recaps: Recap[];
+  deliveries: Delivery[];
+};
+
+/** Media a player captured at a step, for the recap film. */
+export type Capture = {
+  id: string;
+  adventureId: string;
+  stepId: string;
+  partyId: string;
+  userId: string;
+  userName: string;
+  media: MediaRef;
+  at: string;
+};
+
+export type RecapClip = {
+  id: string;
+  captureId: string | null;
+  media: MediaRef;
+  caption: string;
+  /** Seconds on screen. */
+  duration: number;
+  /** Video only: start offset in seconds. */
+  trimStart: number;
+};
+
+export type RecapCut = { title: string; subtitle: string; clips: RecapClip[] };
+
+export type ReleasedRecap = RecapCut & { version: number; releasedAt: string; releasedBy: string };
+
+export type Recap = {
+  adventureId: string;
+  draft: RecapCut;
+  released: ReleasedRecap | null;
+  updatedAt: string;
+};
+
+/** In-app delivery of a released recap to one participant. */
+export type Delivery = {
+  id: string;
+  adventureId: string;
+  userId: string;
+  version: number;
+  deliveredAt: string;
+  seenAt: string | null;
 };
 
 /** Live flow control set by the admin while an adventure runs. */

@@ -7,7 +7,7 @@ import { MapContext, type MapHandle } from "./map/MapContext";
 import type { MapInstance, MapLibreNS } from "./map/maplibre";
 import PlacementOverlay from "./map/PlacementOverlay";
 import Dock, { type DockItem } from "./hud/Dock";
-import { IconCompass, IconFlag, IconGps, IconMemories, IconShield, IconTarget, IconUser } from "./hud/icons";
+import { IconCompass, IconFlag, IconGps, IconMemories, IconPlay, IconShield, IconTarget, IconUser } from "./hud/icons";
 import AdventureDossier from "./adventures/AdventureDossier";
 import AdventureEditor from "./adventures/AdventureEditor";
 import AdventureMarker from "./adventures/AdventureMarker";
@@ -20,6 +20,10 @@ import StepsDesigner from "./steps/StepsDesigner";
 import TeamsSection from "./teams/TeamsSection";
 import LiveControlPanel from "./live/LiveControlPanel";
 import PlayerMarkers from "./live/PlayerMarkers";
+import FilmsPanel from "./recap/FilmsPanel";
+import RecapEditor from "./recap/RecapEditor";
+import RecapPlayer from "./recap/RecapPlayer";
+import type { FilmInput } from "./recap/renderer";
 import { ToastProvider, useToast } from "./hud/Toasts";
 import Avatar from "./auth/Avatar";
 import AccountPanel from "./auth/AccountPanel";
@@ -36,7 +40,7 @@ import { useAuth } from "@/lib/auth/hooks";
 import { canEditContent, isAdmin } from "@/lib/auth/permissions";
 import { useAppState, useRepository } from "@/lib/data/hooks";
 import { deleteBlob } from "@/lib/data/media";
-import type { AdventureStep, LngLat, Photo } from "@/lib/data/types";
+import type { Adventure, AdventureStep, LngLat, Photo, RecapCut } from "@/lib/data/types";
 import { completedSet, controlSets, rewardText, stepState } from "@/lib/steps";
 import { joinBlockReason } from "@/lib/teams";
 import { prepareUpload, type PreparedUpload } from "@/lib/upload";
@@ -56,6 +60,8 @@ type PanelState =
   | { type: "adventures" }
   | { type: "myPhotos" }
   | { type: "live" }
+  | { type: "recap"; adventureId: string }
+  | { type: "films" }
   | { type: "mission"; highlightId?: string }
   | { type: "designer"; adventureId: string; stepId: string | null }
   | null;
@@ -77,6 +83,7 @@ function AdventureMapInner() {
   const [trackId, setTrackId] = useState<string | null>(null);
   const [liveId, setLiveId] = useState<string | null>(null);
   const [sharing, setSharing] = useState<string | null>(null);
+  const [film, setFilm] = useState<{ input: FilmInput; kicker: string } | null>(null);
   const seenNotices = useRef<Set<string> | null>(null);
   const [routeId, setRouteId] = useState<string | null>(null);
   const [pickStep, setPickStep] = useState<{ adventureId: string; step: AdventureStep } | null>(null);
@@ -313,6 +320,37 @@ function AdventureMapInner() {
     toast({ title: "Crew positions simulated", body: `${crew.length} players placed near their next step.` });
   };
 
+  const filmFor = (adv: Adventure, cut: RecapCut): FilmInput => ({
+    title: cut.title || adv.name,
+    subtitle: cut.subtitle,
+    clips: cut.clips,
+    color: adv.look.color,
+    credits: state.memberships.filter((m) => m.adventureId === adv.id).map((m) => m.userName),
+    dateLabel: new Date().toLocaleDateString(undefined, { dateStyle: "medium" }),
+  });
+
+  const myDeliveries = user ? state.deliveries.filter((d) => d.userId === user.id) : [];
+  const unseenFilms = myDeliveries.filter((d) => !d.seenAt).length;
+
+  const addCaptures = async (adv: Adventure, step: AdventureStep, files: File[]) => {
+    if (!user) return;
+    const party = partyIdFor(adv.id) ?? user.id;
+    setUploading(files.length);
+    let ok = 0;
+    for (const file of files) {
+      try {
+        const up = await prepareUpload(file);
+        repo.captures.add({ adventureId: adv.id, stepId: step.id, partyId: party, userId: user.id, userName: user.name, media: up.media });
+        ok++;
+      } catch (err) {
+        toast({ title: "Capture skipped", body: err instanceof Error ? err.message : file.name, tone: "alert" });
+      } finally {
+        setUploading((n) => n - 1);
+      }
+    }
+    if (ok) toast({ title: `${ok} clip${ok > 1 ? "s" : ""} captured`, body: `For the ${adv.name} recap film.`, tone: "reward" });
+  };
+
   const onStepMarker = (step: AdventureStep) => {
     if (!routeAdventure) return;
     if (panel?.type === "designer") return setPanel({ ...panel, stepId: step.id });
@@ -325,6 +363,7 @@ function AdventureMapInner() {
 
   const dockItems: DockItem[] = [
     ...(myAdventures.length ? [{ id: "mission", label: "Mission", icon: <IconCompass /> }] : []),
+    ...(myDeliveries.length ? [{ id: "films", label: "Films", icon: <IconPlay />, badge: unseenFilms || undefined }] : []),
     { id: "adventures", label: "Adventures", icon: <IconFlag />, badge: visibleAdventures.length || undefined },
     { id: "library", label: "Photos", icon: <IconMemories />, badge: photos.length || undefined },
     ...(admin ? [{ id: "live", label: "Live", icon: <IconTarget /> }] : []),
@@ -530,6 +569,10 @@ function AdventureMapInner() {
               partyLabel={teamFor(trackedAdventure.id) ? `Team ${teamFor(trackedAdventure.id)!.name}` : user?.name ?? ""}
               onComplete={(step) => completeStep(trackedAdventure.id, step, "manual")}
               onLocateStep={(step) => step.lngLat && flyTo(step.lngLat, 13)}
+              captureCount={(step) =>
+                state.captures.filter((c) => c.adventureId === trackedAdventure.id && c.stepId === step.id && c.userId === user?.id).length
+              }
+              onCapture={(step, files) => void addCaptures(trackedAdventure, step, files)}
               onClose={() => setPanel(null)}
             />
           ) : null}
@@ -545,6 +588,49 @@ function AdventureMapInner() {
               onLocate={(lngLat) => flyTo(lngLat, 14)}
               onSimulate={simulateCrew}
               onClose={() => setPanel(null)}
+            />
+          ) : null}
+
+          {panel?.type === "recap" && admin ? (() => {
+            const adv = state.adventures.find((a) => a.id === panel.adventureId);
+            if (!adv) return null;
+            return (
+              <RecapEditor
+                adventure={adv}
+                recap={state.recaps.find((r) => r.adventureId === adv.id)}
+                captures={state.captures.filter((c) => c.adventureId === adv.id)}
+                members={membersOf(adv.id)}
+                onSave={(cut) => repo.recap.saveDraft(adv.id, cut)}
+                onPreview={(cut) => setFilm({ input: filmFor(adv, cut), kicker: "Preview · draft cut" })}
+                onRelease={() => {
+                  try {
+                    const r = repo.recap.release(adv.id, user?.name ?? "Admin");
+                    toast({ title: `Recap released · v${r.version}`, body: `Delivered to ${membersOf(adv.id).length} participants.`, tone: "reward" });
+                  } catch (err) {
+                    toast({ title: "Can't release", body: err instanceof Error ? err.message : undefined, tone: "alert" });
+                  }
+                }}
+                onClose={() => setPanel(null)}
+              />
+            );
+          })() : null}
+
+          {panel?.type === "films" && user ? (
+            <FilmsPanel
+              deliveries={myDeliveries}
+              adventures={state.adventures}
+              recaps={state.recaps}
+              onClose={() => setPanel(null)}
+              onWatch={(d) => {
+                const adv = state.adventures.find((a) => a.id === d.adventureId);
+                const released = state.recaps.find((r) => r.adventureId === d.adventureId)?.released;
+                if (!adv || !released) return;
+                repo.recap.markSeen(d.id);
+                setFilm({
+                  input: { ...filmFor(adv, released), dateLabel: new Date(released.releasedAt).toLocaleDateString(undefined, { dateStyle: "medium" }) },
+                  kicker: `Recap film · v${released.version}`,
+                });
+              }}
             />
           ) : null}
 
@@ -804,9 +890,9 @@ function AdventureMapInner() {
               }}
             />
             <div className="brief-steps">
-              <div className="flex items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="hud-kicker">Steps · {openAdventure.steps.length}</p>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   {isMember(openAdventure.id) && openAdventure.steps.length ? (
                     <button
                       type="button"
@@ -843,6 +929,16 @@ function AdventureMapInner() {
                         }}
                       >
                         Live control
+                      </button>
+                      <button
+                        type="button"
+                        className="hud-btn hud-btn-sm"
+                        onClick={() => {
+                          setOpenAdventureId(null);
+                          setPanel({ type: "recap", adventureId: openAdventure.id });
+                        }}
+                      >
+                        Recap film
                       </button>
                     </>
                   ) : null}
@@ -882,6 +978,8 @@ function AdventureMapInner() {
             }}
           />
         ) : null}
+
+        {film ? <RecapPlayer film={film.input} kicker={film.kicker} onClose={() => setFilm(null)} /> : null}
 
         {authOpen ? (
           <AuthSheet
