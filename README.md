@@ -10,6 +10,7 @@ Gamified adventure map app (Next.js static export + MapLibre, served on GitHub P
 | 2 | `feature/photo-map` | Photos on the map (Apple-Photos-style clusters, EXIF GPS, viewer) |
 | 3 | `feature/admin-auth` | Accounts with an **admin** role (mock local auth behind `AuthService`) |
 | 4 | `feature/adventures` | Admin attaches an **adventure** to a picture: name, brief, unique marker, Join |
+| 5 | `feature/adventure-steps` | Adventure **steps** on map locations with prerequisites and rewards |
 
 ### Feature 2 — Photo map (`feature/photo-map`)
 
@@ -41,6 +42,16 @@ Gamified adventure map app (Next.js static export + MapLibre, served on GitHub P
   **Adventures** dock list) for the dossier with crew list and a **Join adventure** button
   (sign-in required). Admins can edit or delete from the dossier.
 - Seed adventures: *Sands of Diriyah* (At-Turaif) and *Crimson Run* (Red Sands).
+
+### Feature 5 — Adventure steps (`feature/adventure-steps`)
+
+- Admin: dossier → **Design steps** opens the mission designer. Each step has a title, instruction,
+  an optional map location (**Set on map** → reticle placement, check-in radius), prerequisites
+  (other steps that must be completed first — loops are blocked) and rewards (items, XP, badges).
+- The map draws the selected adventure's route: numbered step waypoints (solid = unlocked,
+  dotted = locked, filled = done) joined by dashed prerequisite lines.
+- Players who joined get a **Mission** dock item: progress bar, XP, inventory of earned rewards,
+  and per-step **Check in** (GPS within the radius) or **Mark done (demo)** for testing remotely.
 
 ### Data layer (mock, swappable for Supabase)
 

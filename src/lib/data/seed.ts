@@ -1,5 +1,5 @@
 import { PLACES } from "./places";
-import type { Adventure, AppState, LngLat, Membership, Photo } from "./types";
+import type { Adventure, AdventureStep, AppState, LngLat, Membership, Photo, Reward } from "./types";
 
 export const SCHEMA_VERSION = 1;
 
@@ -45,6 +45,44 @@ export const seedPhotos: Photo[] = [
 
 export const FIRST_ADVENTURE_ID = "adv-sands-of-diriyah";
 
+let rid = 0;
+const r = (kind: Reward["kind"], label: string, amount = 1): Reward => ({ id: `rw-${++rid}`, kind, label, amount });
+
+function step(
+  id: string,
+  title: string,
+  instruction: string,
+  place: { name: string; lngLat: LngLat } | null,
+  prerequisites: string[],
+  rewards: Reward[],
+): AdventureStep {
+  return {
+    id,
+    title,
+    instruction,
+    lngLat: place ? place.lngLat : null,
+    placeName: place?.name ?? "",
+    radiusM: 300,
+    prerequisites,
+    rewards,
+  };
+}
+
+const diriyahSteps: AdventureStep[] = [
+  step("st-rally", "Rally at Masmak", "Meet under the old gate. Receive your role cards and form the convoy.", PLACES.masmak, [], [r("badge", "Caravan formed"), r("item", "Role card")]),
+  step("st-wadi", "Bonds of the Wadi", "Build a cairn together and name your car.", PLACES.wadiHanifah, ["st-rally"], [r("item", "Cairn stone"), r("xp", "XP", 100)]),
+  step("st-sands", "Run the Red Sands", "Drivers navigate, runners grab three flags before the timer ends.", PLACES.redSands, ["st-rally"], [r("item", "Crimson flag"), r("xp", "XP", 150)]),
+  step("st-chronicle", "The Lost Chronicle", "Quiet hour at At-Turaif. Lore readers decode the riddle — no phones.", PLACES.turaif, ["st-wadi"], [r("item", "Chronicle page"), r("xp", "XP", 200)]),
+  step("st-edge", "Race to the Edge", "All teams race to the cliff marker. Bring the flag and the chronicle.", PLACES.edge, ["st-sands", "st-chronicle"], [r("badge", "Edge runner"), r("xp", "XP", 300)]),
+  step("st-fireside", "Fireside", "Cook together, share stories and watch the recap film.", PLACES.camp, ["st-edge"], [r("badge", "Storyteller")]),
+];
+
+const crimsonSteps: AdventureStep[] = [
+  step("st-cr-1", "Engines on", "Check tyre pressure and pick your navigator.", null, [], [r("item", "Map scroll")]),
+  step("st-cr-2", "First flag", "Grab the first flag on the ridge.", { name: "Red Sands ridge", lngLat: [46.2555, 24.5862] }, ["st-cr-1"], [r("xp", "XP", 100)]),
+  step("st-cr-3", "Sunset sprint", "Last flag before sunset.", { name: "Red Sand Dunes", lngLat: [46.2405, 24.5752] }, ["st-cr-2"], [r("badge", "Dune racer")]),
+];
+
 export const seedAdventures: Adventure[] = [
   {
     id: FIRST_ADVENTURE_ID,
@@ -60,6 +98,7 @@ export const seedAdventures: Adventure[] = [
     status: "open",
     createdBy: "seed",
     createdAt: "2026-09-20T09:00:00.000Z",
+    steps: diriyahSteps,
   },
   {
     id: "adv-crimson-run",
@@ -74,6 +113,7 @@ export const seedAdventures: Adventure[] = [
     status: "open",
     createdBy: "seed",
     createdAt: "2026-09-21T09:00:00.000Z",
+    steps: crimsonSteps,
   },
 ];
 
@@ -89,5 +129,6 @@ export function createSeedState(): AppState {
     photos: structuredClone(seedPhotos),
     adventures: structuredClone(seedAdventures),
     memberships: structuredClone(seedMemberships),
+    progress: [],
   };
 }

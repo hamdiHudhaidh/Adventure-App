@@ -40,6 +40,24 @@ export type AdventureBrief = {
 
 export type AdventureStatus = "draft" | "open" | "active" | "completed";
 
+export type RewardKind = "item" | "xp" | "badge";
+
+export type Reward = { id: string; kind: RewardKind; label: string; amount: number };
+
+export type AdventureStep = {
+  id: string;
+  title: string;
+  instruction: string;
+  /** Map location for the step, or null for "anywhere" steps. */
+  lngLat: LngLat | null;
+  placeName: string;
+  /** Check-in radius in metres when the step has a location. */
+  radiusM: number;
+  /** Step ids that must be completed first. */
+  prerequisites: string[];
+  rewards: Reward[];
+};
+
 export type Adventure = {
   id: string;
   /** The picture this adventure is attached to (its cover + map position). */
@@ -50,6 +68,16 @@ export type Adventure = {
   status: AdventureStatus;
   createdBy: string;
   createdAt: string;
+  steps: AdventureStep[];
+};
+
+/** A completed step for a party (a player now; a team in a later branch). */
+export type StepProgress = {
+  adventureId: string;
+  partyId: string;
+  stepId: string;
+  completedAt: string;
+  completedBy: string;
 };
 
 export type Membership = {
@@ -64,4 +92,5 @@ export type AppState = {
   photos: Photo[];
   adventures: Adventure[];
   memberships: Membership[];
+  progress: StepProgress[];
 };

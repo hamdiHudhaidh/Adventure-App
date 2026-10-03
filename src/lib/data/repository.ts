@@ -14,6 +14,7 @@ import type {
   AdventureBrief,
   AdventureLook,
   AdventureStatus,
+  AdventureStep,
   AppState,
   LngLat,
   LocationSource,
@@ -56,6 +57,12 @@ export interface AdventureRepository {
     remove(id: string): void;
     join(adventureId: string, user: { id: string; name: string }): void;
     leave(adventureId: string, userId: string): void;
+    setSteps(adventureId: string, steps: AdventureStep[]): void;
+  };
+  progress: {
+    complete(adventureId: string, partyId: string, stepId: string, completedBy: string): void;
+    undo(adventureId: string, partyId: string, stepId: string): void;
+    resetParty(adventureId: string, partyId: string): void;
   };
 }
 
@@ -66,7 +73,13 @@ function hydrate(raw: unknown): AppState {
   const seed = createSeedState();
   if (!raw || typeof raw !== "object") return seed;
   const saved = raw as Partial<AppState>;
-  return { ...seed, ...saved, schema: SCHEMA_VERSION } as AppState;
+  const merged = { ...seed, ...saved, schema: SCHEMA_VERSION } as AppState;
+  // Older saves: give each adventure the fields added by later branches.
+  merged.adventures = merged.adventures.map((a) => ({
+    ...a,
+    steps: a.steps ?? structuredClone(seed.adventures.find((x) => x.id === a.id)?.steps ?? []),
+  }));
+  return merged;
 }
 
 function createLocalRepository(): AdventureRepository {
@@ -154,6 +167,7 @@ function createLocalRepository(): AdventureRepository {
           id: newId("adv"),
           createdBy,
           createdAt: new Date().toISOString(),
+          steps: [],
           ...input,
         };
         mutate((s) => ({ ...s, adventures: [...s.adventures, adventure] }));
@@ -170,6 +184,7 @@ function createLocalRepository(): AdventureRepository {
           ...s,
           adventures: s.adventures.filter((a) => a.id !== id),
           memberships: s.memberships.filter((m) => m.adventureId !== id),
+          progress: s.progress.filter((p) => p.adventureId !== id),
         }));
       },
       join(adventureId, user) {
@@ -189,6 +204,47 @@ function createLocalRepository(): AdventureRepository {
         mutate((s) => ({
           ...s,
           memberships: s.memberships.filter((m) => !(m.adventureId === adventureId && m.userId === userId)),
+        }));
+      },
+      setSteps(adventureId, steps) {
+        const ids = new Set(steps.map((x) => x.id));
+        mutate((s) => ({
+          ...s,
+          adventures: s.adventures.map((a) =>
+            a.id === adventureId
+              ? { ...a, steps: steps.map((x) => ({ ...x, prerequisites: x.prerequisites.filter((p) => ids.has(p)) })) }
+              : a,
+          ),
+          progress: s.progress.filter((p) => p.adventureId !== adventureId || ids.has(p.stepId)),
+        }));
+      },
+    },
+    progress: {
+      complete(adventureId, partyId, stepId, completedBy) {
+        mutate((s) =>
+          s.progress.some((p) => p.adventureId === adventureId && p.partyId === partyId && p.stepId === stepId)
+            ? s
+            : {
+                ...s,
+                progress: [
+                  ...s.progress,
+                  { adventureId, partyId, stepId, completedBy, completedAt: new Date().toISOString() },
+                ],
+              },
+        );
+      },
+      undo(adventureId, partyId, stepId) {
+        mutate((s) => ({
+          ...s,
+          progress: s.progress.filter(
+            (p) => !(p.adventureId === adventureId && p.partyId === partyId && p.stepId === stepId),
+          ),
+        }));
+      },
+      resetParty(adventureId, partyId) {
+        mutate((s) => ({
+          ...s,
+          progress: s.progress.filter((p) => !(p.adventureId === adventureId && p.partyId === partyId)),
         }));
       },
     },

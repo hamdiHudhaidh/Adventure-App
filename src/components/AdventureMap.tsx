@@ -7,12 +7,16 @@ import { MapContext, type MapHandle } from "./map/MapContext";
 import type { MapInstance, MapLibreNS } from "./map/maplibre";
 import PlacementOverlay from "./map/PlacementOverlay";
 import Dock, { type DockItem } from "./hud/Dock";
-import { IconFlag, IconMemories, IconShield, IconUser } from "./hud/icons";
+import { IconCompass, IconFlag, IconMemories, IconShield, IconUser } from "./hud/icons";
 import AdventureDossier from "./adventures/AdventureDossier";
 import AdventureEditor from "./adventures/AdventureEditor";
 import AdventureMarker from "./adventures/AdventureMarker";
 import AdventuresPanel from "./adventures/AdventuresPanel";
 import { LookBadge } from "./adventures/looks";
+import MissionTracker from "./steps/MissionTracker";
+import StepList from "./steps/StepList";
+import StepMarkers from "./steps/StepMarkers";
+import StepsDesigner from "./steps/StepsDesigner";
 import { ToastProvider, useToast } from "./hud/Toasts";
 import Avatar from "./auth/Avatar";
 import AccountPanel from "./auth/AccountPanel";
@@ -27,7 +31,8 @@ import { useAuth } from "@/lib/auth/hooks";
 import { canEditContent, isAdmin } from "@/lib/auth/permissions";
 import { useAppState, useRepository } from "@/lib/data/hooks";
 import { deleteBlob } from "@/lib/data/media";
-import type { LngLat, Photo } from "@/lib/data/types";
+import type { AdventureStep, LngLat, Photo } from "@/lib/data/types";
+import { completedSet, rewardText } from "@/lib/steps";
 import { prepareUpload, type PreparedUpload } from "@/lib/upload";
 
 const MapView = dynamic(() => import("./MapView"), {
@@ -43,6 +48,8 @@ type PanelState =
   | { type: "account" }
   | { type: "admin" }
   | { type: "adventures" }
+  | { type: "mission"; highlightId?: string }
+  | { type: "designer"; adventureId: string; stepId: string | null }
   | null;
 
 function AdventureMapInner() {
@@ -57,6 +64,9 @@ function AdventureMapInner() {
   const [authOpen, setAuthOpen] = useState(false);
   const [openAdventureId, setOpenAdventureId] = useState<string | null>(null);
   const [editor, setEditor] = useState<{ photoId: string; adventureId?: string } | null>(null);
+  const [trackId, setTrackId] = useState<string | null>(null);
+  const [routeId, setRouteId] = useState<string | null>(null);
+  const [pickStep, setPickStep] = useState<{ adventureId: string; step: AdventureStep } | null>(null);
   const introDone = useRef(false);
   const { user, auth } = useAuth();
   const admin = isAdmin(user);
@@ -171,7 +181,46 @@ function AdventureMapInner() {
   const editorPhoto = editor ? photos.find((p) => p.id === editor.photoId) : undefined;
   const editorAdventure = editor?.adventureId ? state.adventures.find((a) => a.id === editor.adventureId) : undefined;
 
+  // Progress is tracked per party. Until teams exist a party is one player.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const partyIdFor = (_adventureId: string) => user?.id ?? null;
+  const doneFor = (adventureId: string) => {
+    const party = partyIdFor(adventureId);
+    return party ? completedSet(state.progress, adventureId, party) : new Set<string>();
+  };
+  const myAdventures = visibleAdventures.filter((a) => isMember(a.id) && a.steps.length);
+  const trackedAdventure = myAdventures.find((a) => a.id === trackId) ?? myAdventures[0] ?? null;
+  const designerAdventure =
+    panel?.type === "designer" ? state.adventures.find((a) => a.id === panel.adventureId) ?? null : null;
+  const routeAdventure =
+    designerAdventure ??
+    (pickStep ? state.adventures.find((a) => a.id === pickStep.adventureId) : null) ??
+    visibleAdventures.find((a) => a.id === routeId) ??
+    trackedAdventure;
+
+  const completeStep = (adventureId: string, step: AdventureStep, how: "gps" | "manual") => {
+    const party = partyIdFor(adventureId);
+    if (!party || !user) return;
+    repo.progress.complete(adventureId, party, step.id, user.name);
+    toast({
+      title: `Step complete · ${step.title}`,
+      body: step.rewards.length ? `Rewards: ${step.rewards.map(rewardText).join(" · ")}` : how === "gps" ? "Checked in by GPS." : undefined,
+      tone: "reward",
+    });
+  };
+
+  const onStepMarker = (step: AdventureStep) => {
+    if (!routeAdventure) return;
+    if (panel?.type === "designer") return setPanel({ ...panel, stepId: step.id });
+    if (isMember(routeAdventure.id)) {
+      setTrackId(routeAdventure.id);
+      return setPanel({ type: "mission", highlightId: step.id });
+    }
+    toast({ title: step.title, body: step.instruction || step.placeName });
+  };
+
   const dockItems: DockItem[] = [
+    ...(myAdventures.length ? [{ id: "mission", label: "Mission", icon: <IconCompass /> }] : []),
     { id: "adventures", label: "Adventures", icon: <IconFlag />, badge: visibleAdventures.length || undefined },
     { id: "library", label: "Photos", icon: <IconMemories />, badge: photos.length || undefined },
     ...(admin ? [{ id: "admin", label: "Admin", icon: <IconShield /> }] : []),
@@ -223,10 +272,39 @@ function AdventureMapInner() {
           );
         })}
 
+        {routeAdventure ? (
+          <StepMarkers
+            key={routeAdventure.id}
+            adventure={routeAdventure}
+            done={doneFor(routeAdventure.id)}
+            selectedId={
+              panel?.type === "designer" ? panel.stepId : panel?.type === "mission" ? panel.highlightId ?? null : null
+            }
+            onSelect={onStepMarker}
+          />
+        ) : null}
+
         <MapHud viewport={viewport} status={status} />
 
         <div className="pointer-events-none absolute inset-0 z-[1100]">
-          {!current ? (
+          {routeAdventure && !current && !pickStep ? (
+            <button
+              type="button"
+              className="route-chip pointer-events-auto"
+              style={{ ["--adv" as string]: routeAdventure.look.color }}
+              onClick={() => {
+                const pts = routeAdventure.steps.filter((x) => x.lngLat).map((x) => ({ lngLat: x.lngLat! }));
+                if (pts.length && handle) {
+                  handle.map.fitBounds(boundsOf(pts), { padding: 110, maxZoom: 14, duration: 1100 });
+                }
+              }}
+            >
+              <LookBadge look={routeAdventure.look} size={22} />
+              <span>Route · {routeAdventure.name}</span>
+            </button>
+          ) : null}
+
+          {!current && !pickStep ? (
             <Dock
               items={dockItems}
               active={panel?.type ?? null}
@@ -257,6 +335,41 @@ function AdventureMapInner() {
                 setViewer(null);
                 toast({ title: "Demo content reset", body: "Sample photos restored." });
               }}
+            />
+          ) : null}
+
+          {panel?.type === "mission" && trackedAdventure && !pickStep ? (
+            <MissionTracker
+              adventures={myAdventures}
+              activeId={trackedAdventure.id}
+              onActiveChange={(id) => {
+                setTrackId(id);
+                setRouteId(id);
+              }}
+              done={doneFor(trackedAdventure.id)}
+              highlightId={panel.highlightId}
+              partyLabel={user?.name ?? ""}
+              onComplete={(step) => completeStep(trackedAdventure.id, step, "manual")}
+              onLocateStep={(step) => step.lngLat && flyTo(step.lngLat, 13)}
+              onClose={() => setPanel(null)}
+            />
+          ) : null}
+
+          {designerAdventure && panel?.type === "designer" && admin && !pickStep ? (
+            <StepsDesigner
+              adventure={designerAdventure}
+              selectedId={panel.stepId}
+              onSelect={(stepId) => {
+                setPanel({ ...panel, stepId });
+                const st = designerAdventure.steps.find((x) => x.id === stepId);
+                if (st?.lngLat) flyTo(st.lngLat, 11);
+              }}
+              onChange={(steps) => repo.adventures.setSteps(designerAdventure.id, steps)}
+              onPickLocation={(step) => {
+                setPickStep({ adventureId: designerAdventure.id, step });
+                if (step.lngLat) flyTo(step.lngLat, 13);
+              }}
+              onClose={() => setPanel(null)}
             />
           ) : null}
 
@@ -360,6 +473,28 @@ function AdventureMapInner() {
           </PlacementOverlay>
         ) : null}
 
+        {pickStep ? (
+          <PlacementOverlay
+            title={`Place step · ${pickStep.step.title}`}
+            hint="Pan the map so the reticle sits on the step location."
+            confirmLabel="Set step here"
+            center={[viewport.lng, viewport.lat]}
+            onCancel={() => setPickStep(null)}
+            onConfirm={(lngLat) => {
+              const adv = state.adventures.find((a) => a.id === pickStep.adventureId);
+              if (adv) {
+                repo.adventures.setSteps(
+                  adv.id,
+                  adv.steps.map((x) => (x.id === pickStep.step.id ? { ...x, lngLat } : x)),
+                );
+              }
+              setPanel({ type: "designer", adventureId: pickStep.adventureId, stepId: pickStep.step.id });
+              setPickStep(null);
+              toast({ title: "Step placed", body: pickStep.step.title, tone: "reward" });
+            }}
+          />
+        ) : null}
+
         {viewer && viewerPhotos.length ? (
           <PhotoViewer
             photos={viewerPhotos}
@@ -438,9 +573,48 @@ function AdventureMapInner() {
             onLocate={() => {
               const photo = photos.find((p) => p.id === openAdventure.photoId);
               setOpenAdventureId(null);
-              if (photo) flyTo(photo.lngLat, 13);
+              setRouteId(openAdventure.id);
+              const pts = openAdventure.steps.filter((x) => x.lngLat).map((x) => ({ lngLat: x.lngLat! }));
+              if (pts.length > 1 && handle) {
+                handle.map.fitBounds(boundsOf(pts), { padding: 110, maxZoom: 14, duration: 1100 });
+              } else if (photo) flyTo(photo.lngLat, 13);
             }}
-          />
+          >
+            <div className="brief-steps">
+              <div className="flex items-center justify-between gap-2">
+                <p className="hud-kicker">Steps · {openAdventure.steps.length}</p>
+                <div className="flex gap-2">
+                  {isMember(openAdventure.id) && openAdventure.steps.length ? (
+                    <button
+                      type="button"
+                      className="hud-btn hud-btn-sm"
+                      onClick={() => {
+                        setTrackId(openAdventure.id);
+                        setRouteId(openAdventure.id);
+                        setOpenAdventureId(null);
+                        setPanel({ type: "mission" });
+                      }}
+                    >
+                      Track mission
+                    </button>
+                  ) : null}
+                  {admin ? (
+                    <button
+                      type="button"
+                      className="hud-btn hud-btn-sm"
+                      onClick={() => {
+                        setOpenAdventureId(null);
+                        setPanel({ type: "designer", adventureId: openAdventure.id, stepId: null });
+                      }}
+                    >
+                      Design steps
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+              <StepList adventure={openAdventure} done={doneFor(openAdventure.id)} compact />
+            </div>
+          </AdventureDossier>
         ) : null}
 
         {editor && editorPhoto && admin ? (

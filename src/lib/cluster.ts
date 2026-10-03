@@ -50,7 +50,7 @@ export function sortKey(p: Photo) {
   return p.takenAt ?? p.createdAt;
 }
 
-export function boundsOf(photos: Photo[]): [LngLat, LngLat] {
+export function boundsOf(photos: { lngLat: LngLat }[]): [LngLat, LngLat] {
   let minLng = Infinity,
     minLat = Infinity,
     maxLng = -Infinity,
