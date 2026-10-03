@@ -23,6 +23,8 @@ import Avatar from "./auth/Avatar";
 import AccountPanel from "./auth/AccountPanel";
 import AdminConsolePanel from "./auth/AdminConsolePanel";
 import AuthSheet from "./auth/AuthSheet";
+import ProfileSection from "./auth/ProfileSection";
+import SignUpForm from "./auth/SignUpForm";
 import MediaView from "./photos/MediaView";
 import PhotoClusters from "./photos/PhotoClusters";
 import PhotoLibraryPanel from "./photos/PhotoLibraryPanel";
@@ -50,6 +52,7 @@ type PanelState =
   | { type: "account" }
   | { type: "admin" }
   | { type: "adventures" }
+  | { type: "myPhotos" }
   | { type: "mission"; highlightId?: string }
   | { type: "designer"; adventureId: string; stepId: string | null }
   | null;
@@ -63,7 +66,9 @@ function AdventureMapInner() {
   const [viewer, setViewer] = useState<{ ids: string[]; index: number } | null>(null);
   const [pending, setPending] = useState<PreparedUpload[]>([]);
   const [uploading, setUploading] = useState(0);
-  const [authOpen, setAuthOpen] = useState(false);
+  const [authOpen, setAuthOpenRaw] = useState<false | "signin" | "signup">(false);
+  const setAuthOpen = (open: boolean | "signin" | "signup") =>
+    setAuthOpenRaw(open === true ? "signin" : open);
   const [openAdventureId, setOpenAdventureId] = useState<string | null>(null);
   const [editor, setEditor] = useState<{ photoId: string; adventureId?: string } | null>(null);
   const [trackId, setTrackId] = useState<string | null>(null);
@@ -128,7 +133,7 @@ function AdventureMapInner() {
 
   const handleFiles = async (files: File[]) => {
     if (!author) {
-      setAuthOpen(true);
+      setAuthOpen("signup");
       return;
     }
     setUploading(files.length);
@@ -192,7 +197,10 @@ function AdventureMapInner() {
     return state.adventures.find((a) => a.id === adventureId)?.teams.find((t) => t.id === teamId);
   };
   const joinAdventure = (adventureId: string, teamId?: string) => {
-    if (!user) return setAuthOpen(true);
+    if (!user) {
+      toast({ title: "Create an account to join", body: "Just a name and a profile picture." });
+      return setAuthOpen("signup");
+    }
     const adv = state.adventures.find((a) => a.id === adventureId);
     try {
       repo.adventures.join(adventureId, user, teamId);
@@ -342,7 +350,28 @@ function AdventureMapInner() {
                 setPanel(null);
                 toast({ title: "Signed out" });
               }}
-            />
+            >
+              <ProfileSection
+                key={user.id}
+                user={user}
+                photoCount={photos.filter((p) => p.authorId === user.id).length}
+                adventures={visibleAdventures
+                  .filter((a) => isMember(a.id))
+                  .map((a) => ({
+                    adventure: a,
+                    teamName: teamFor(a.id)?.name ?? null,
+                    done: a.steps.filter((x) => doneFor(a.id).has(x.id)).length,
+                    total: a.steps.length,
+                  }))}
+                onSave={({ name, avatar }) => {
+                  auth.updateUser(user.id, { name, avatar });
+                  if (name !== user.name) repo.people.rename(user.id, name);
+                  toast({ title: "Profile saved", tone: "reward" });
+                }}
+                onOpenAdventure={(a) => setOpenAdventureId(a.id)}
+                onShowPhotos={() => setPanel({ type: "myPhotos" })}
+              />
+            </AccountPanel>
           ) : null}
 
           {panel?.type === "admin" && admin ? (
@@ -425,14 +454,32 @@ function AdventureMapInner() {
               onOpen={openViewer}
               onAddFiles={handleFiles}
               canUpload={!!user}
-              uploadHint="Sign in to add your photos to the map."
+              uploadHint="Create a player account (name + profile picture) to add your photos."
               footerExtra={
                 !user ? (
-                  <button type="button" className="hud-btn hud-btn-primary w-full" onClick={() => setAuthOpen(true)}>
-                    Sign in
-                  </button>
+                  <div className="flex gap-2">
+                    <button type="button" className="hud-btn flex-1" onClick={() => setAuthOpen("signin")}>
+                      Sign in
+                    </button>
+                    <button type="button" className="hud-btn hud-btn-primary flex-1" onClick={() => setAuthOpen("signup")}>
+                      Create account
+                    </button>
+                  </div>
                 ) : null
               }
+            />
+          ) : null}
+
+          {panel?.type === "myPhotos" && user && !current ? (
+            <PhotoLibraryPanel
+              title="My photos"
+              kicker={`${user.name} · ${photos.filter((p) => p.authorId === user.id).length} on the map`}
+              photos={photos.filter((p) => p.authorId === user.id)}
+              onClose={() => setPanel(null)}
+              onOpen={openViewer}
+              onAddFiles={handleFiles}
+              canUpload
+              onZoom={() => zoomToPhotos(photos.filter((p) => p.authorId === user.id))}
             />
           ) : null}
 
@@ -679,6 +726,8 @@ function AdventureMapInner() {
 
         {authOpen ? (
           <AuthSheet
+            initialMode={authOpen === "signup" ? "signup" : undefined}
+            extraModes={[{ id: "signup", label: "Create account", render: (done) => <SignUpForm onDone={done} /> }]}
             onClose={() => setAuthOpen(false)}
             onDone={(message) => {
               setAuthOpen(false);

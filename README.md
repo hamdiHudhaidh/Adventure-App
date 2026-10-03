@@ -12,6 +12,7 @@ Gamified adventure map app (Next.js static export + MapLibre, served on GitHub P
 | 4 | `feature/adventures` | Admin attaches an **adventure** to a picture: name, brief, unique marker, Join |
 | 5 | `feature/adventure-steps` | Adventure **steps** on map locations with prerequisites and rewards |
 | 6 | `feature/teams-capacity` | Admin sets **number of players** and **number of teams** |
+| 7 | `feature/player-accounts` | Players **sign up** with name + profile picture, add photos, join missions |
 
 ### Feature 2 — Photo map (`feature/photo-map`)
 
@@ -61,6 +62,14 @@ Gamified adventure map app (Next.js static export + MapLibre, served on GitHub P
 - Joining auto-balances players into the emptiest team; players can also pick a team or switch
   while seats remain. Full adventures/teams disable Join. Progress and rewards are shared per team.
 - Seed: *Sands of Diriyah* — 12 players, 3 teams (the Notion test-run family, one seat left per car).
+
+### Feature 7 — Player accounts (`feature/player-accounts`)
+
+- **Sign in → Create account**: name, profile picture (tap to pick/take, centre-cropped square),
+  username and password. Self sign-up always creates a *player* (never admin).
+- Players add their own pictures to the map (EXIF GPS or drop a pin), see open adventures and
+  join them (signed-out Join opens sign-up). Admin tools stay hidden for players.
+- **Account** panel: edit name & picture, *My adventures* (team + step progress), *My photos*.
 
 ### Data layer (mock, swappable for Supabase)
 

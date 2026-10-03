@@ -2241,3 +2241,71 @@ body {
   border-color: #71717a;
   color: #a1a1aa;
 }
+
+/* ---------- Feature 7: player accounts ---------- */
+
+.avatar-picker {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.avatar-picker-btn {
+  position: relative;
+  flex: none;
+  overflow: visible;
+  border: 2px dashed #f5ff00;
+  border-radius: 50%;
+  background: rgba(245, 255, 0, 0.06);
+}
+
+.avatar-picker-btn .avatar-img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.avatar-picker-initials {
+  font-family: var(--font-game), sans-serif;
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: #f5ff00;
+}
+
+.avatar-picker-cam {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  display: flex;
+  width: 30px;
+  height: 30px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #f5ff00;
+  color: #0b0b0d;
+}
+
+.profile-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border: 1px dashed rgba(245, 255, 0, 0.35);
+  padding: 12px;
+}
+
+.my-adv {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 10px;
+  border: 1px dashed color-mix(in srgb, var(--adv, #f5ff00) 55%, transparent);
+  padding: 8px 10px;
+  min-height: 52px;
+}
+
+.my-adv .tracker-bar {
+  flex: none;
+  margin-top: 0;
+}

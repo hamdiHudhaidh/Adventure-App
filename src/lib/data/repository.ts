@@ -65,6 +65,10 @@ export interface AdventureRepository {
     leave(adventureId: string, userId: string): void;
     setSteps(adventureId: string, steps: AdventureStep[]): void;
   };
+  people: {
+    /** Keep denormalised names in sync after a profile rename. */
+    rename(userId: string, name: string): void;
+  };
   progress: {
     complete(adventureId: string, partyId: string, stepId: string, completedBy: string): void;
     undo(adventureId: string, partyId: string, stepId: string): void;
@@ -263,6 +267,15 @@ function createLocalRepository(): AdventureRepository {
               : a,
           ),
           progress: s.progress.filter((p) => p.adventureId !== adventureId || ids.has(p.stepId)),
+        }));
+      },
+    },
+    people: {
+      rename(userId, name) {
+        mutate((s) => ({
+          ...s,
+          photos: s.photos.map((p) => (p.authorId === userId ? { ...p, authorName: name } : p)),
+          memberships: s.memberships.map((m) => (m.userId === userId ? { ...m, userName: name } : m)),
         }));
       },
     },

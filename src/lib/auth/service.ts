@@ -24,6 +24,8 @@ export interface AuthService {
   /** First-run: create the admin account on this device (only if none exists). */
   setupAdmin(input: { username: string; name: string; password: string }): Promise<User>;
   /** Create an account (role chosen by caller; admins can create admins). */
+  /** Self-service player sign-up (never grants admin). Starts a session. */
+  signUp(input: { username: string; name: string; password: string; avatar: MediaRef | null }, remember: boolean): Promise<User>;
   createUser(input: { username: string; name: string; password: string; role: Role; avatar?: MediaRef | null }): Promise<User>;
   updateUser(id: string, patch: Partial<Pick<User, "name" | "avatar" | "role">>): void;
   removeUser(id: string): void;
@@ -177,6 +179,13 @@ function createLocalAuth(): AuthService {
       }
       const user = await insertUser({ ...input, role: "admin" });
       startSession(user, true);
+      emit();
+      return strip(user);
+    },
+    async signUp(input, remember) {
+      if (!input.name.trim()) throw new Error("Tell us your name.");
+      const user = await insertUser({ ...input, role: "player" });
+      startSession(user, remember);
       emit();
       return strip(user);
     },
