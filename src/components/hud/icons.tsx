@@ -106,3 +106,17 @@ export const IconChevron = (p: IconProps) => (
     <path d="M9 6l6 6-6 6" />
   </Base>
 );
+
+export const IconShield = (p: IconProps) => (
+  <Base {...p}>
+    <path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z" />
+    <path d="M8.5 12l2.5 2.5 4.5-5" />
+  </Base>
+);
+
+export const IconUser = (p: IconProps) => (
+  <Base {...p}>
+    <circle cx="12" cy="8" r="4" />
+    <path d="M4 21c1-4 4.5-6 8-6s7 2 8 6" />
+  </Base>
+);

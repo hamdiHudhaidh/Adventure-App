@@ -7,13 +7,19 @@ import { MapContext, type MapHandle } from "./map/MapContext";
 import type { MapInstance, MapLibreNS } from "./map/maplibre";
 import PlacementOverlay from "./map/PlacementOverlay";
 import Dock, { type DockItem } from "./hud/Dock";
-import { IconMemories, IconReset } from "./hud/icons";
+import { IconMemories, IconShield, IconUser } from "./hud/icons";
 import { ToastProvider, useToast } from "./hud/Toasts";
+import Avatar from "./auth/Avatar";
+import AccountPanel from "./auth/AccountPanel";
+import AdminConsolePanel from "./auth/AdminConsolePanel";
+import AuthSheet from "./auth/AuthSheet";
 import MediaView from "./photos/MediaView";
 import PhotoClusters from "./photos/PhotoClusters";
 import PhotoLibraryPanel from "./photos/PhotoLibraryPanel";
 import PhotoViewer from "./photos/PhotoViewer";
 import { boundsOf, type PhotoCluster } from "@/lib/cluster";
+import { useAuth } from "@/lib/auth/hooks";
+import { canEditContent, isAdmin } from "@/lib/auth/permissions";
 import { useAppState, useRepository } from "@/lib/data/hooks";
 import { deleteBlob } from "@/lib/data/media";
 import type { LngLat, Photo } from "@/lib/data/types";
@@ -26,10 +32,12 @@ const MapView = dynamic(() => import("./MapView"), {
 const INITIAL_VIEW: MapViewport = { zoom: 2.2, lat: 0, lng: 20 };
 const HOME: { center: LngLat; zoom: number } = { center: [46.35, 24.78], zoom: 8.4 };
 
-// Until accounts exist (later branch), uploads are attributed to this device.
-const LOCAL_AUTHOR = { authorId: "local-user", authorName: "You" };
-
-type PanelState = { type: "library" } | { type: "cluster"; cluster: PhotoCluster } | null;
+type PanelState =
+  | { type: "library" }
+  | { type: "cluster"; cluster: PhotoCluster }
+  | { type: "account" }
+  | { type: "admin" }
+  | null;
 
 function AdventureMapInner() {
   const [viewport, setViewport] = useState<MapViewport>(INITIAL_VIEW);
@@ -40,7 +48,11 @@ function AdventureMapInner() {
   const [viewer, setViewer] = useState<{ ids: string[]; index: number } | null>(null);
   const [pending, setPending] = useState<PreparedUpload[]>([]);
   const [uploading, setUploading] = useState(0);
+  const [authOpen, setAuthOpen] = useState(false);
   const introDone = useRef(false);
+  const { user, auth } = useAuth();
+  const admin = isAdmin(user);
+  const author = user ? { authorId: user.id, authorName: user.name } : null;
 
   const state = useAppState();
   const repo = useRepository();
@@ -95,6 +107,10 @@ function AdventureMapInner() {
   );
 
   const handleFiles = async (files: File[]) => {
+    if (!author) {
+      setAuthOpen(true);
+      return;
+    }
     setUploading(files.length);
     let placed = 0;
     const needPin: PreparedUpload[] = [];
@@ -104,7 +120,7 @@ function AdventureMapInner() {
         const up = await prepareUpload(file);
         if (up.exifLngLat) {
           repo.photos.add({
-            ...LOCAL_AUTHOR,
+            ...author,
             lngLat: up.exifLngLat,
             locationSource: "exif",
             media: up.media,
@@ -140,6 +156,12 @@ function AdventureMapInner() {
 
   const dockItems: DockItem[] = [
     { id: "library", label: "Photos", icon: <IconMemories />, badge: photos.length || undefined },
+    ...(admin ? [{ id: "admin", label: "Admin", icon: <IconShield /> }] : []),
+    {
+      id: "account",
+      label: user ? user.name.split(" ")[0].slice(0, 9) : "Sign in",
+      icon: user ? <Avatar user={user} size={22} /> : <IconUser />,
+    },
   ];
 
   const current = pending[0];
@@ -174,8 +196,34 @@ function AdventureMapInner() {
           {!current ? (
             <Dock
               items={dockItems}
-              active={panel?.type === "library" ? "library" : null}
-              onSelect={() => setPanel((p) => (p?.type === "library" ? null : { type: "library" }))}
+              active={panel?.type ?? null}
+              onSelect={(id) => {
+                if (id === "account" && !user) return setAuthOpen(true);
+                setPanel((p) => (p?.type === id ? null : ({ type: id } as PanelState)));
+              }}
+            />
+          ) : null}
+
+          {panel?.type === "account" && user ? (
+            <AccountPanel
+              user={user}
+              onClose={() => setPanel(null)}
+              onSignOut={() => {
+                auth.signOut();
+                setPanel(null);
+                toast({ title: "Signed out" });
+              }}
+            />
+          ) : null}
+
+          {panel?.type === "admin" && admin ? (
+            <AdminConsolePanel
+              onClose={() => setPanel(null)}
+              onResetDemo={() => {
+                repo.reset();
+                setViewer(null);
+                toast({ title: "Demo content reset", body: "Sample photos restored." });
+              }}
             />
           ) : null}
 
@@ -191,18 +239,14 @@ function AdventureMapInner() {
               onClose={() => setPanel(null)}
               onOpen={openViewer}
               onAddFiles={handleFiles}
+              canUpload={!!user}
+              uploadHint="Sign in to add your photos to the map."
               footerExtra={
-                <button
-                  type="button"
-                  className="hud-btn hud-btn-ghost w-full"
-                  onClick={() => {
-                    repo.reset();
-                    setViewer(null);
-                    toast({ title: "Demo data reset", body: "Sample photos restored." });
-                  }}
-                >
-                  <IconReset size={16} /> Reset demo photos
-                </button>
+                !user ? (
+                  <button type="button" className="hud-btn hud-btn-primary w-full" onClick={() => setAuthOpen(true)}>
+                    Sign in
+                  </button>
+                ) : null
               }
             />
           ) : null}
@@ -244,8 +288,9 @@ function AdventureMapInner() {
               </button>
             }
             onConfirm={(lngLat) => {
+              if (!author) return;
               repo.photos.add({
-                ...LOCAL_AUTHOR,
+                ...author,
                 lngLat,
                 locationSource: "pin",
                 media: current.media,
@@ -271,11 +316,21 @@ function AdventureMapInner() {
               setViewer(null);
               flyTo(p.lngLat, 15);
             }}
-            canEdit={() => true}
+            canEdit={(p) => canEditContent(user, p.authorId)}
             onSave={(p, patch) => repo.photos.update(p.id, patch)}
             onDelete={(p) => {
               repo.photos.remove(p.id);
               toast({ title: "Photo deleted" });
+            }}
+          />
+        ) : null}
+
+        {authOpen ? (
+          <AuthSheet
+            onClose={() => setAuthOpen(false)}
+            onDone={(message) => {
+              setAuthOpen(false);
+              toast({ title: message, tone: "reward" });
             }}
           />
         ) : null}

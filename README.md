@@ -8,6 +8,7 @@ Gamified adventure map app (Next.js static export + MapLibre, served on GitHub P
 |---|--------|--------------|
 | 1 | `feature/real-map` | Real MapLibre map with the neon atlas style and game HUD |
 | 2 | `feature/photo-map` | Photos on the map (Apple-Photos-style clusters, EXIF GPS, viewer) |
+| 3 | `feature/admin-auth` | Accounts with an **admin** role (mock local auth behind `AuthService`) |
 
 ### Feature 2 — Photo map (`feature/photo-map`)
 
@@ -19,6 +20,17 @@ Gamified adventure map app (Next.js static export + MapLibre, served on GitHub P
   caption & place, show on map, delete).
 - iPad note: iOS only keeps photo location in uploads when the picker's *Options → Location* is on;
   otherwise you'll be asked to drop a pin.
+
+### Feature 3 — Admin account (`feature/admin-auth`)
+
+- First run on a device: dock → **Sign in** → **Admin setup** creates the admin (game master) account.
+  No credentials are shipped in the code.
+- Admins get an **Admin** dock item: users database (change roles, remove, create accounts) and a
+  *reset demo content* tool. Signing in is required to add photos; admins can edit/delete any photo,
+  others only their own.
+- `src/lib/auth/service.ts` is the only auth API (local implementation: PBKDF2 password hashes in
+  localStorage, session in sessionStorage + optional "keep me signed in"). Two tabs can be signed in
+  as different users. Swap for Supabase Auth + a `profiles.role` column later.
 
 ### Data layer (mock, swappable for Supabase)
 
