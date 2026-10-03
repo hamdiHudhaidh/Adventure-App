@@ -49,7 +49,7 @@ export default function AdventuresPanel({
                     </span>
                     <span className="adv-card-name">{a.name}</span>
                     <span className="adv-card-meta">
-                      {a.brief.codename || "—"} · {joined ? "You joined" : `${count} joined`}
+                      {a.brief.codename || "—"} · {joined ? "You joined" : `${count}/${a.capacity} players`} · {a.teams.length} teams
                     </span>
                   </span>
                 </button>

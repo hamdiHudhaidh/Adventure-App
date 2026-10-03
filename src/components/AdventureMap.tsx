@@ -17,6 +17,7 @@ import MissionTracker from "./steps/MissionTracker";
 import StepList from "./steps/StepList";
 import StepMarkers from "./steps/StepMarkers";
 import StepsDesigner from "./steps/StepsDesigner";
+import TeamsSection from "./teams/TeamsSection";
 import { ToastProvider, useToast } from "./hud/Toasts";
 import Avatar from "./auth/Avatar";
 import AccountPanel from "./auth/AccountPanel";
@@ -33,6 +34,7 @@ import { useAppState, useRepository } from "@/lib/data/hooks";
 import { deleteBlob } from "@/lib/data/media";
 import type { AdventureStep, LngLat, Photo } from "@/lib/data/types";
 import { completedSet, rewardText } from "@/lib/steps";
+import { joinBlockReason } from "@/lib/teams";
 import { prepareUpload, type PreparedUpload } from "@/lib/upload";
 
 const MapView = dynamic(() => import("./MapView"), {
@@ -181,9 +183,25 @@ function AdventureMapInner() {
   const editorPhoto = editor ? photos.find((p) => p.id === editor.photoId) : undefined;
   const editorAdventure = editor?.adventureId ? state.adventures.find((a) => a.id === editor.adventureId) : undefined;
 
-  // Progress is tracked per party. Until teams exist a party is one player.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const partyIdFor = (_adventureId: string) => user?.id ?? null;
+  // Progress is shared by a team; a player without a team is their own party.
+  const membershipFor = (adventureId: string) =>
+    user ? state.memberships.find((m) => m.adventureId === adventureId && m.userId === user.id) : undefined;
+  const partyIdFor = (adventureId: string) => membershipFor(adventureId)?.teamId ?? user?.id ?? null;
+  const teamFor = (adventureId: string) => {
+    const teamId = membershipFor(adventureId)?.teamId;
+    return state.adventures.find((a) => a.id === adventureId)?.teams.find((t) => t.id === teamId);
+  };
+  const joinAdventure = (adventureId: string, teamId?: string) => {
+    if (!user) return setAuthOpen(true);
+    const adv = state.adventures.find((a) => a.id === adventureId);
+    try {
+      repo.adventures.join(adventureId, user, teamId);
+      const team = adv?.teams.find((t) => t.id === repo.getSnapshot().memberships.find((m) => m.adventureId === adventureId && m.userId === user.id)?.teamId);
+      toast({ title: "You joined", body: `${adv?.name ?? ""}${team ? ` · Team ${team.name}` : ""}`, tone: "reward" });
+    } catch (err) {
+      toast({ title: "Couldn't join", body: err instanceof Error ? err.message : undefined, tone: "alert" });
+    }
+  };
   const doneFor = (adventureId: string) => {
     const party = partyIdFor(adventureId);
     return party ? completedSet(state.progress, adventureId, party) : new Set<string>();
@@ -348,7 +366,7 @@ function AdventureMapInner() {
               }}
               done={doneFor(trackedAdventure.id)}
               highlightId={panel.highlightId}
-              partyLabel={user?.name ?? ""}
+              partyLabel={teamFor(trackedAdventure.id) ? `Team ${teamFor(trackedAdventure.id)!.name}` : user?.name ?? ""}
               onComplete={(step) => completeStep(trackedAdventure.id, step, "manual")}
               onLocateStep={(step) => step.lngLat && flyTo(step.lngLat, 13)}
               onClose={() => setPanel(null)}
@@ -556,11 +574,8 @@ function AdventureMapInner() {
             joined={isMember(openAdventure.id)}
             isAdmin={admin}
             onClose={() => setOpenAdventureId(null)}
-            onJoin={() => {
-              if (!user) return setAuthOpen(true);
-              repo.adventures.join(openAdventure.id, user);
-              toast({ title: "You joined", body: openAdventure.name, tone: "reward" });
-            }}
+            joinDisabledReason={joinBlockReason(openAdventure, state.memberships)}
+            onJoin={() => joinAdventure(openAdventure.id)}
             onLeave={() => {
               if (!user) return;
               repo.adventures.leave(openAdventure.id, user.id);
@@ -580,6 +595,21 @@ function AdventureMapInner() {
               } else if (photo) flyTo(photo.lngLat, 13);
             }}
           >
+            <TeamsSection
+              adventure={openAdventure}
+              memberships={state.memberships}
+              userId={user?.id ?? null}
+              canJoin={openAdventure.status === "open" || openAdventure.status === "active"}
+              onJoinTeam={(teamId) => joinAdventure(openAdventure.id, teamId)}
+              onSwitchTeam={(teamId) => {
+                if (!user) return;
+                try {
+                  repo.adventures.setTeam(openAdventure.id, user.id, teamId);
+                } catch (err) {
+                  toast({ title: "Couldn't switch", body: err instanceof Error ? err.message : undefined, tone: "alert" });
+                }
+              }}
+            />
             <div className="brief-steps">
               <div className="flex items-center justify-between gap-2">
                 <p className="hud-kicker">Steps · {openAdventure.steps.length}</p>
@@ -621,6 +651,7 @@ function AdventureMapInner() {
           <AdventureEditor
             photo={editorPhoto}
             initial={editorAdventure}
+            memberCount={editorAdventure ? membersOf(editorAdventure.id).length : 0}
             onCancel={() => setEditor(null)}
             onDelete={
               editorAdventure

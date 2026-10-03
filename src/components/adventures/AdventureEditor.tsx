@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { MAX_PLAYERS, MAX_TEAMS, resizeTeams, seatsPerTeam } from "@/lib/teams";
 import type { AdventureInput } from "@/lib/data/repository";
 import type { AdventureStatus, Photo } from "@/lib/data/types";
 import { IconClose } from "../hud/icons";
@@ -22,14 +23,17 @@ export default function AdventureEditor({
   onSave,
   onDelete,
   children,
+  memberCount = 0,
 }: {
   photo: Photo;
   initial?: AdventureInput;
   onCancel: () => void;
   onSave: (input: AdventureInput) => void;
   onDelete?: () => void;
-  /** Later features add sections (steps, teams…). */
+  /** Later features add sections. */
   children?: React.ReactNode;
+  /** Players already in the adventure (capacity can't go below this). */
+  memberCount?: number;
 }) {
   const [v, setV] = useState<AdventureInput>(
     initial ?? {
@@ -38,6 +42,8 @@ export default function AdventureEditor({
       brief: { codename: "", summary: "", objective: "" },
       look: { glyph: "diamond", color: "#f5ff00" },
       status: "open",
+      capacity: 12,
+      teams: resizeTeams([], 3),
     },
   );
   const [error, setError] = useState<string | null>(null);
@@ -51,6 +57,8 @@ export default function AdventureEditor({
         onSubmit={(e) => {
           e.preventDefault();
           if (!v.name.trim()) return setError("Give the adventure a name.");
+          if (v.capacity < memberCount) return setError(`${memberCount} players already joined — raise the player count.`);
+          if (v.teams.some((t) => !t.name.trim())) return setError("Every team needs a name.");
           onSave({ ...v, name: v.name.trim() });
         }}
       >
@@ -134,6 +142,45 @@ export default function AdventureEditor({
             <p className="text-xs text-zinc-500">Draft adventures are only visible to admins.</p>
           </div>
 
+          <div className="hud-field">
+            <span>Crew &amp; teams</span>
+            <div className="crew-grid">
+              <Stepper
+                label="Players"
+                value={v.capacity}
+                min={Math.max(1, v.teams.length, memberCount)}
+                max={MAX_PLAYERS}
+                onChange={(capacity) => setV({ ...v, capacity })}
+              />
+              <Stepper
+                label="Teams"
+                value={v.teams.length}
+                min={1}
+                max={Math.min(MAX_TEAMS, v.capacity)}
+                onChange={(n) => setV({ ...v, teams: resizeTeams(v.teams, n) })}
+              />
+            </div>
+            <p className="text-xs text-zinc-400">
+              {v.teams.length} team{v.teams.length > 1 ? "s" : ""} × up to {seatsPerTeam(v)} players · {v.capacity} seats total.
+              New players are balanced across teams.
+            </p>
+            <div className="team-name-list">
+              {v.teams.map((t, i) => (
+                <label key={t.id} className="team-name-row" style={{ ["--team" as string]: t.color }}>
+                  <span className="team-dot" aria-hidden />
+                  <input
+                    value={t.name}
+                    maxLength={20}
+                    aria-label={`Team ${i + 1} name`}
+                    onChange={(e) =>
+                      setV({ ...v, teams: v.teams.map((x) => (x.id === t.id ? { ...x, name: e.target.value } : x)) })
+                    }
+                  />
+                </label>
+              ))}
+            </div>
+          </div>
+
           {children}
           {error ? <p className="hud-error">{error}</p> : null}
         </div>
@@ -158,6 +205,44 @@ export default function AdventureEditor({
           </button>
         </footer>
       </form>
+    </div>
+  );
+}
+
+function Stepper({
+  label,
+  value,
+  min,
+  max,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  onChange: (n: number) => void;
+}) {
+  const clamp = (n: number) => Math.max(min, Math.min(max, n));
+  return (
+    <div className="stepper">
+      <span className="hud-kicker">{label}</span>
+      <div className="stepper-row">
+        <button type="button" onClick={() => onChange(clamp(value - 1))} disabled={value <= min} aria-label={`Fewer ${label}`}>
+          −
+        </button>
+        <input
+          type="number"
+          inputMode="numeric"
+          value={value}
+          min={min}
+          max={max}
+          aria-label={label}
+          onChange={(e) => onChange(clamp(Number(e.target.value) || min))}
+        />
+        <button type="button" onClick={() => onChange(clamp(value + 1))} disabled={value >= max} aria-label={`More ${label}`}>
+          +
+        </button>
+      </div>
     </div>
   );
 }

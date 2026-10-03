@@ -34,7 +34,7 @@ export default function AdventureMarker({
           <span className="adv-marker-name">{adventure.name}</span>
           <span className="adv-marker-meta">
             {adventure.status === "draft" ? "Draft · " : ""}
-            {joined ? "Joined" : `${members} joined`}
+            {joined ? "Joined" : members >= adventure.capacity ? "Full" : `${members}/${adventure.capacity} joined`}
           </span>
         </span>
         <span className="adv-marker-badge">

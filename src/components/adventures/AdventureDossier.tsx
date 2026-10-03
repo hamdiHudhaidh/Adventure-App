@@ -81,7 +81,8 @@ export default function AdventureDossier({
             <div>
               <dt>Crew</dt>
               <dd>
-                {members.length ? members.map((m) => m.userName).join(", ") : "Nobody yet — be first"}
+                {members.length}/{adventure.capacity} players · {adventure.teams.length} team
+                {adventure.teams.length > 1 ? "s" : ""}
               </dd>
             </div>
           </dl>

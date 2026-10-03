@@ -1,5 +1,5 @@
 import { PLACES } from "./places";
-import type { Adventure, AdventureStep, AppState, LngLat, Membership, Photo, Reward } from "./types";
+import type { Adventure, AdventureStep, AppState, LngLat, Membership, Photo, Reward, Team } from "./types";
 
 export const SCHEMA_VERSION = 1;
 
@@ -83,6 +83,12 @@ const crimsonSteps: AdventureStep[] = [
   step("st-cr-3", "Sunset sprint", "Last flag before sunset.", { name: "Red Sand Dunes", lngLat: [46.2405, 24.5752] }, ["st-cr-2"], [r("badge", "Dune racer")]),
 ];
 
+const diriyahTeams: Team[] = [
+  { id: "tm-falcon", name: "Falcons", color: "#f5ff00" },
+  { id: "tm-oryx", name: "Oryx", color: "#5be7ff" },
+  { id: "tm-scorpion", name: "Scorpions", color: "#ff4d6d" },
+];
+
 export const seedAdventures: Adventure[] = [
   {
     id: FIRST_ADVENTURE_ID,
@@ -99,6 +105,8 @@ export const seedAdventures: Adventure[] = [
     createdBy: "seed",
     createdAt: "2026-09-20T09:00:00.000Z",
     steps: diriyahSteps,
+    capacity: 12,
+    teams: diriyahTeams,
   },
   {
     id: "adv-crimson-run",
@@ -114,14 +122,34 @@ export const seedAdventures: Adventure[] = [
     createdBy: "seed",
     createdAt: "2026-09-21T09:00:00.000Z",
     steps: crimsonSteps,
+    capacity: 6,
+    teams: [
+      { id: "tm-red", name: "Red", color: "#ff4d6d" },
+      { id: "tm-gold", name: "Gold", color: "#ffb547" },
+    ],
   },
 ];
 
-export const seedMemberships: Membership[] = [
-  { adventureId: FIRST_ADVENTURE_ID, userId: "player-khalid", userName: "Khalid", joinedAt: "2026-09-25T10:00:00.000Z" },
-  { adventureId: FIRST_ADVENTURE_ID, userId: "player-sara", userName: "Sara", joinedAt: "2026-09-25T11:00:00.000Z" },
-  { adventureId: FIRST_ADVENTURE_ID, userId: "player-rayan", userName: "Rayan", joinedAt: "2026-09-25T12:00:00.000Z" },
+// Test-run family (see Notion "Test Run"): three cars, one seat left in each.
+const crew: [string, string, string][] = [
+  ["Khalid", "tm-falcon", "09:00"],
+  ["Omar", "tm-falcon", "09:05"],
+  ["Nahla", "tm-falcon", "09:10"],
+  ["Sara", "tm-oryx", "10:00"],
+  ["Hanouf", "tm-oryx", "10:05"],
+  ["Nora", "tm-oryx", "10:10"],
+  ["Rayan", "tm-scorpion", "11:00"],
+  ["Meme", "tm-scorpion", "11:05"],
+  ["AJ", "tm-scorpion", "11:10"],
 ];
+
+export const seedMemberships: Membership[] = crew.map(([name, teamId, time]) => ({
+  adventureId: FIRST_ADVENTURE_ID,
+  userId: `player-${name.toLowerCase()}`,
+  userName: name,
+  joinedAt: `2026-09-25T${time}:00.000Z`,
+  teamId,
+}));
 
 export function createSeedState(): AppState {
   return {

@@ -9,6 +9,7 @@ import { BASE_PATH } from "../basePath";
 import { newId } from "./ids";
 import { deleteBlob } from "./media";
 import { createSeedState, SCHEMA_VERSION } from "./seed";
+import { pickTeam, seatsPerTeam, teamMembers, TEAM_COLORS } from "../teams";
 import type {
   Adventure,
   AdventureBrief,
@@ -17,6 +18,7 @@ import type {
   AdventureStep,
   AppState,
   LngLat,
+  Team,
   LocationSource,
   MediaRef,
   Photo,
@@ -28,6 +30,8 @@ export type AdventureInput = {
   brief: AdventureBrief;
   look: AdventureLook;
   status: AdventureStatus;
+  capacity: number;
+  teams: Team[];
 };
 
 export type NewPhotoInput = {
@@ -55,7 +59,9 @@ export interface AdventureRepository {
     create(input: AdventureInput, createdBy: string): Adventure;
     update(id: string, patch: Partial<AdventureInput>): void;
     remove(id: string): void;
-    join(adventureId: string, user: { id: string; name: string }): void;
+    /** Joins the given team, or the emptiest team with a seat. Throws when full. */
+    join(adventureId: string, user: { id: string; name: string }, teamId?: string): void;
+    setTeam(adventureId: string, userId: string, teamId: string): void;
     leave(adventureId: string, userId: string): void;
     setSteps(adventureId: string, steps: AdventureStep[]): void;
   };
@@ -75,9 +81,20 @@ function hydrate(raw: unknown): AppState {
   const saved = raw as Partial<AppState>;
   const merged = { ...seed, ...saved, schema: SCHEMA_VERSION } as AppState;
   // Older saves: give each adventure the fields added by later branches.
-  merged.adventures = merged.adventures.map((a) => ({
-    ...a,
-    steps: a.steps ?? structuredClone(seed.adventures.find((x) => x.id === a.id)?.steps ?? []),
+  merged.adventures = merged.adventures.map((a) => {
+    const fromSeed = seed.adventures.find((x) => x.id === a.id);
+    return {
+      ...a,
+      steps: a.steps ?? structuredClone(fromSeed?.steps ?? []),
+      capacity: a.capacity ?? fromSeed?.capacity ?? 12,
+      teams: a.teams?.length
+        ? a.teams
+        : structuredClone(fromSeed?.teams ?? [{ id: `${a.id}-team-1`, name: "Team 1", color: TEAM_COLORS[0] }]),
+    };
+  });
+  merged.memberships = merged.memberships.map((m) => ({
+    ...m,
+    teamId: m.teamId ?? merged.adventures.find((a) => a.id === m.adventureId)?.teams[0]?.id ?? null,
   }));
   return merged;
 }
@@ -174,10 +191,19 @@ function createLocalRepository(): AdventureRepository {
         return adventure;
       },
       update(id, patch) {
-        mutate((s) => ({
-          ...s,
-          adventures: s.adventures.map((a) => (a.id === id ? { ...a, ...patch } : a)),
-        }));
+        mutate((s) => {
+          const adventures = s.adventures.map((a) => (a.id === id ? { ...a, ...patch } : a));
+          const adv = adventures.find((a) => a.id === id);
+          if (!adv || !patch.teams) return { ...s, adventures };
+          // Members of removed teams are re-balanced into the remaining ones.
+          const keep = new Set(adv.teams.map((t) => t.id));
+          let memberships = s.memberships.filter((m) => m.adventureId !== id || (m.teamId && keep.has(m.teamId)));
+          for (const m of s.memberships.filter((x) => x.adventureId === id && !(x.teamId && keep.has(x.teamId)))) {
+            const team = pickTeam({ ...adv, capacity: Number.MAX_SAFE_INTEGER }, memberships) ?? adv.teams[0];
+            memberships = [...memberships, { ...m, teamId: team.id }];
+          }
+          return { ...s, adventures, memberships };
+        });
       },
       remove(id) {
         mutate((s) => ({
@@ -187,18 +213,39 @@ function createLocalRepository(): AdventureRepository {
           progress: s.progress.filter((p) => p.adventureId !== id),
         }));
       },
-      join(adventureId, user) {
-        mutate((s) =>
-          s.memberships.some((m) => m.adventureId === adventureId && m.userId === user.id)
-            ? s
-            : {
-                ...s,
-                memberships: [
-                  ...s.memberships,
-                  { adventureId, userId: user.id, userName: user.name, joinedAt: new Date().toISOString() },
-                ],
-              },
-        );
+      join(adventureId, user, teamId) {
+        const s0 = current();
+        const adv = s0.adventures.find((a) => a.id === adventureId);
+        if (!adv) throw new Error("Adventure not found");
+        if (s0.memberships.some((m) => m.adventureId === adventureId && m.userId === user.id)) return;
+        const team = teamId
+          ? adv.teams.find(
+              (t) => t.id === teamId && teamMembers(s0.memberships, adventureId, t.id).length < seatsPerTeam(adv),
+            )
+          : pickTeam(adv, s0.memberships);
+        const total = s0.memberships.filter((m) => m.adventureId === adventureId).length;
+        if (!team || total >= adv.capacity) throw new Error("No seats left");
+        mutate((s) => ({
+          ...s,
+          memberships: [
+            ...s.memberships,
+            { adventureId, userId: user.id, userName: user.name, joinedAt: new Date().toISOString(), teamId: team.id },
+          ],
+        }));
+      },
+      setTeam(adventureId, userId, teamId) {
+        const s0 = current();
+        const adv = s0.adventures.find((a) => a.id === adventureId);
+        if (!adv?.teams.some((t) => t.id === teamId)) return;
+        if (teamMembers(s0.memberships, adventureId, teamId).length >= seatsPerTeam(adv)) {
+          throw new Error("That team is full");
+        }
+        mutate((s) => ({
+          ...s,
+          memberships: s.memberships.map((m) =>
+            m.adventureId === adventureId && m.userId === userId ? { ...m, teamId } : m,
+          ),
+        }));
       },
       leave(adventureId, userId) {
         mutate((s) => ({

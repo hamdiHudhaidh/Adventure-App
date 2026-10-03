@@ -58,6 +58,8 @@ export type AdventureStep = {
   rewards: Reward[];
 };
 
+export type Team = { id: string; name: string; color: string };
+
 export type Adventure = {
   id: string;
   /** The picture this adventure is attached to (its cover + map position). */
@@ -69,6 +71,10 @@ export type Adventure = {
   createdBy: string;
   createdAt: string;
   steps: AdventureStep[];
+  /** Maximum number of players. */
+  capacity: number;
+  /** Players are split across these teams (at least one). */
+  teams: Team[];
 };
 
 /** A completed step for a party (a player now; a team in a later branch). */
@@ -85,6 +91,7 @@ export type Membership = {
   userId: string;
   userName: string;
   joinedAt: string;
+  teamId: string | null;
 };
 
 export type AppState = {
