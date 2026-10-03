@@ -13,6 +13,7 @@ Gamified adventure map app (Next.js static export + MapLibre, served on GitHub P
 | 5 | `feature/adventure-steps` | Adventure **steps** on map locations with prerequisites and rewards |
 | 6 | `feature/teams-capacity` | Admin sets **number of players** and **number of teams** |
 | 7 | `feature/player-accounts` | Players **sign up** with name + profile picture, add photos, join missions |
+| 8 | `feature/live-control` | Admin **live control**: every team's progress; advance / unlock / pause; messages |
 
 ### Feature 2 — Photo map (`feature/photo-map`)
 
@@ -70,6 +71,18 @@ Gamified adventure map app (Next.js static export + MapLibre, served on GitHub P
 - Players add their own pictures to the map (EXIF GPS or drop a pin), see open adventures and
   join them (signed-out Join opens sign-up). Admin tools stay hidden for players.
 - **Account** panel: edit name & picture, *My adventures* (team + step progress), *My photos*.
+
+### Feature 8 — Live control (`feature/live-control`)
+
+- Admin dock **Live** (or dossier → *Live control*): status header with **Pause all / Resume**,
+  a card per team (crew, progress, current step, last action) with **Advance ▸**; expand a team to
+  **Complete / Reopen / Unlock / Relock** any step, move players between teams or reset progress.
+- **Step flow**: pause/resume individual steps for everyone, with per-team completion dots.
+- **Message players** (everyone or one team) — players get a toast + note in their Mission tracker.
+- Activity feed of joins, check-ins and admin actions. Player positions on the map from
+  *Share live location* (Mission tracker) or **Simulate crew positions** for demos.
+- Open the same preview in two tabs (admin + player) — changes sync instantly between tabs
+  via `storage` events. Multi-device sync needs the future backend.
 
 ### Data layer (mock, swappable for Supabase)
 

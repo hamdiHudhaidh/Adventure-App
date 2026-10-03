@@ -1,4 +1,4 @@
-import type { Adventure, AdventureStep, Reward, StepProgress } from "./data/types";
+import type { Adventure, AdventureControl, AdventureStep, Reward, StepProgress } from "./data/types";
 
 export type StepState = "done" | "available" | "locked";
 
@@ -6,9 +6,23 @@ export function completedSet(progress: StepProgress[], adventureId: string, part
   return new Set(progress.filter((p) => p.adventureId === adventureId && p.partyId === partyId).map((p) => p.stepId));
 }
 
-export function stepState(step: AdventureStep, done: Set<string>): StepState {
+export function stepState(step: AdventureStep, done: Set<string>, unlocked?: Set<string>): StepState {
   if (done.has(step.id)) return "done";
+  if (unlocked?.has(step.id)) return "available";
   return step.prerequisites.every((id) => done.has(id)) ? "available" : "locked";
+}
+
+/** Flow-control view for one party: force-unlocks and paused steps. */
+export function controlSets(
+  controls: AdventureControl[],
+  adventureId: string,
+  partyId: string | null,
+  steps: AdventureStep[],
+) {
+  const c = controls.find((x) => x.adventureId === adventureId);
+  const unlocked = new Set(c?.unlocks.filter((u) => u.partyId === partyId).map((u) => u.stepId) ?? []);
+  const paused = new Set(c?.paused ? steps.map((s) => s.id) : c?.pausedSteps ?? []);
+  return { unlocked, paused, allPaused: !!c?.paused };
 }
 
 /** Would making `stepId` depend on `prereqId` create a cycle? */

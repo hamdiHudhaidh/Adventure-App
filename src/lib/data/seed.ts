@@ -1,5 +1,5 @@
 import { PLACES } from "./places";
-import type { Adventure, AdventureStep, AppState, LngLat, Membership, Photo, Reward, Team } from "./types";
+import type { ActivityEntry, Adventure, AdventureStep, AppState, LngLat, Membership, Photo, Reward, StepProgress, Team } from "./types";
 
 export const SCHEMA_VERSION = 1;
 
@@ -151,12 +151,33 @@ export const seedMemberships: Membership[] = crew.map(([name, teamId, time]) => 
   teamId,
 }));
 
+// A run already under way, so live control has something to show.
+const seedProgress: StepProgress[] = [
+  { adventureId: FIRST_ADVENTURE_ID, partyId: "tm-falcon", stepId: "st-rally", completedAt: "2026-10-01T06:20:00.000Z", completedBy: "Khalid" },
+  { adventureId: FIRST_ADVENTURE_ID, partyId: "tm-falcon", stepId: "st-wadi", completedAt: "2026-10-01T07:25:00.000Z", completedBy: "Omar" },
+  { adventureId: FIRST_ADVENTURE_ID, partyId: "tm-oryx", stepId: "st-rally", completedAt: "2026-10-01T06:22:00.000Z", completedBy: "Sara" },
+];
+
+const seedActivity: ActivityEntry[] = seedProgress.map((p, i) => ({
+  id: `ev-seed-${i}`,
+  adventureId: p.adventureId,
+  partyId: p.partyId,
+  actor: p.completedBy,
+  kind: "step",
+  text: `completed “${diriyahSteps.find((x) => x.id === p.stepId)?.title}”`,
+  at: p.completedAt,
+}));
+
 export function createSeedState(): AppState {
   return {
     schema: SCHEMA_VERSION,
     photos: structuredClone(seedPhotos),
     adventures: structuredClone(seedAdventures),
     memberships: structuredClone(seedMemberships),
-    progress: [],
+    progress: structuredClone(seedProgress),
+    controls: [],
+    activity: structuredClone(seedActivity),
+    positions: [],
+    notices: [],
   };
 }

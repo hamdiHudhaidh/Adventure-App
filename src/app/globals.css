@@ -2309,3 +2309,236 @@ body {
   flex: none;
   margin-top: 0;
 }
+
+/* ---------- Feature 8: live control ---------- */
+
+.live-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--adv, #f5ff00);
+  background: color-mix(in srgb, var(--adv, #f5ff00) 6%, transparent);
+  padding: 10px 12px;
+}
+
+.live-header.is-paused {
+  border-style: dashed;
+  border-color: #ffb36b;
+  background: rgba(255, 179, 107, 0.08);
+}
+
+.live-status {
+  font-family: var(--font-game), sans-serif;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--adv, #f5ff00);
+}
+
+.live-status::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: step-pulse 1.4s ease-in-out infinite;
+  vertical-align: 1px;
+}
+
+.live-header.is-paused .live-status {
+  color: #ffb36b;
+}
+
+.live-team {
+  border: 1px dashed color-mix(in srgb, var(--team, #f5ff00) 55%, transparent);
+  padding: 10px;
+}
+
+.live-team.is-open {
+  border-style: solid;
+  border-color: var(--team, #f5ff00);
+}
+
+.live-team-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.live-crew {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.live-member {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 2px 8px 2px 2px;
+  font-size: 0.75rem;
+  color: #e4e4e7;
+}
+
+.live-locate {
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+  color: var(--team, #f5ff00);
+}
+
+.live-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 10px;
+  border-top: 1px dotted rgba(245, 255, 0, 0.25);
+  padding-top: 8px;
+}
+
+.live-step,
+.live-flow li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+}
+
+.live-step.is-done .step-row-num {
+  background: var(--adv, #f5ff00);
+  color: #0b0b0d;
+}
+
+.live-step.is-locked {
+  opacity: 0.7;
+}
+
+.live-step.is-paused .step-row-num {
+  border-color: #ffb36b;
+  color: #ffb36b;
+}
+
+.live-flow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  --adv: #f5ff00;
+}
+
+.live-dots {
+  display: flex;
+  gap: 4px;
+}
+
+.live-dots span {
+  width: 10px;
+  height: 10px;
+  border: 1px solid var(--team, #f5ff00);
+  transform: rotate(45deg);
+}
+
+.live-dots span.is-done {
+  background: var(--team, #f5ff00);
+}
+
+.live-message {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.live-message select,
+.live-message input {
+  border: 1px solid rgba(245, 255, 0, 0.3);
+  background: rgba(5, 5, 6, 0.8);
+  padding: 8px 10px;
+  font-size: 0.85rem;
+  color: #f4f4f5;
+}
+
+.live-message input {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.live-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.78rem;
+  color: #d4d4d8;
+}
+
+.live-feed li {
+  display: grid;
+  grid-template-columns: 74px 1fr;
+  gap: 8px;
+  border-left: 2px solid rgba(245, 255, 0, 0.3);
+  padding-left: 8px;
+}
+
+.live-feed li.is-admin {
+  border-left-color: #ffb36b;
+}
+
+.live-feed li.is-notice {
+  border-left-color: #5be7ff;
+}
+
+.live-feed-time {
+  font-size: 0.68rem;
+  color: #71717a;
+}
+
+.player-pin {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: none;
+}
+
+.player-pin .avatar {
+  outline: 2px solid var(--team, #f5ff00);
+  outline-offset: 2px;
+  box-shadow: 0 0 14px var(--team, #f5ff00);
+}
+
+.player-pin.is-me .avatar {
+  outline-style: dashed;
+}
+
+.player-pin-name {
+  position: absolute;
+  top: 32px;
+  white-space: nowrap;
+  background: rgba(8, 8, 10, 0.85);
+  padding: 0 5px;
+  font-size: 0.6rem;
+  color: var(--team, #f5ff00);
+}
+
+.tracker-paused {
+  border: 1px dashed #ffb36b;
+  padding: 8px 10px;
+  font-family: var(--font-game), sans-serif;
+  font-size: 0.6rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #ffb36b;
+}
+
+.tracker-notice {
+  border-left: 2px solid #5be7ff;
+  background: rgba(91, 231, 255, 0.07);
+  padding: 6px 10px;
+  font-size: 0.8rem;
+  color: #e4e4e7;
+}

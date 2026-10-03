@@ -15,8 +15,11 @@ import type {
   AdventureBrief,
   AdventureLook,
   AdventureStatus,
+  ActivityEntry,
+  AdventureControl,
   AdventureStep,
   AppState,
+  PlayerPosition,
   LngLat,
   Team,
   LocationSource,
@@ -65,15 +68,46 @@ export interface AdventureRepository {
     leave(adventureId: string, userId: string): void;
     setSteps(adventureId: string, steps: AdventureStep[]): void;
   };
+  control: {
+    setPaused(adventureId: string, paused: boolean, actor: string): void;
+    toggleStepPause(adventureId: string, stepId: string, actor: string): void;
+    unlock(adventureId: string, partyId: string, stepId: string, actor: string): void;
+    relock(adventureId: string, partyId: string, stepId: string): void;
+  };
+  live: {
+    log(entry: Omit<ActivityEntry, "id" | "at">): void;
+    setPosition(pos: Omit<PlayerPosition, "at">): void;
+    clearPosition(userId: string, adventureId: string): void;
+    notify(adventureId: string, partyId: string | null, text: string, from: string): void;
+  };
   people: {
     /** Keep denormalised names in sync after a profile rename. */
     rename(userId: string, name: string): void;
   };
   progress: {
     complete(adventureId: string, partyId: string, stepId: string, completedBy: string): void;
-    undo(adventureId: string, partyId: string, stepId: string): void;
-    resetParty(adventureId: string, partyId: string): void;
+    undo(adventureId: string, partyId: string, stepId: string, actor?: string): void;
+    resetParty(adventureId: string, partyId: string, actor?: string): void;
   };
+}
+
+function withControl(s: AppState, adventureId: string, fn: (c: AdventureControl) => AdventureControl): AppState {
+  const current = s.controls.find((c) => c.adventureId === adventureId) ?? {
+    adventureId,
+    paused: false,
+    pausedSteps: [],
+    unlocks: [],
+  };
+  return { ...s, controls: [...s.controls.filter((c) => c.adventureId !== adventureId), fn(current)] };
+}
+
+function stepTitle(s: AppState, adventureId: string, stepId: string) {
+  return s.adventures.find((a) => a.id === adventureId)?.steps.find((x) => x.id === stepId)?.title ?? "step";
+}
+
+function withActivity(s: AppState, entry: Omit<ActivityEntry, "id" | "at">): AppState {
+  const e: ActivityEntry = { ...entry, id: newId("ev"), at: new Date().toISOString() };
+  return { ...s, activity: [...s.activity, e].slice(-300) };
 }
 
 const STORAGE_KEY = `adventure-app${BASE_PATH || ""}:state`;
@@ -229,13 +263,18 @@ function createLocalRepository(): AdventureRepository {
           : pickTeam(adv, s0.memberships);
         const total = s0.memberships.filter((m) => m.adventureId === adventureId).length;
         if (!team || total >= adv.capacity) throw new Error("No seats left");
-        mutate((s) => ({
-          ...s,
-          memberships: [
-            ...s.memberships,
-            { adventureId, userId: user.id, userName: user.name, joinedAt: new Date().toISOString(), teamId: team.id },
-          ],
-        }));
+        mutate((s) =>
+          withActivity(
+            {
+              ...s,
+              memberships: [
+                ...s.memberships,
+                { adventureId, userId: user.id, userName: user.name, joinedAt: new Date().toISOString(), teamId: team.id },
+              ],
+            },
+            { adventureId, partyId: team.id, actor: user.name, kind: "join", text: `joined Team ${team.name}` },
+          ),
+        );
       },
       setTeam(adventureId, userId, teamId) {
         const s0 = current();
@@ -270,6 +309,72 @@ function createLocalRepository(): AdventureRepository {
         }));
       },
     },
+    control: {
+      setPaused(adventureId, paused, actor) {
+        mutate((s) => withActivity(withControl(s, adventureId, (c) => ({ ...c, paused })), {
+          adventureId, partyId: null, actor, kind: "admin", text: paused ? "paused the adventure" : "resumed the adventure",
+        }));
+      },
+      toggleStepPause(adventureId, stepId, actor) {
+        mutate((s) => {
+          const c = s.controls.find((x) => x.adventureId === adventureId);
+          const on = !c?.pausedSteps.includes(stepId);
+          const title = s.adventures.find((a) => a.id === adventureId)?.steps.find((x) => x.id === stepId)?.title ?? "step";
+          const next = withControl(s, adventureId, (cc) => ({
+            ...cc,
+            pausedSteps: on ? [...cc.pausedSteps, stepId] : cc.pausedSteps.filter((x) => x !== stepId),
+          }));
+          return withActivity(next, { adventureId, partyId: null, actor, kind: "admin", text: `${on ? "paused" : "resumed"} “${title}”` });
+        });
+      },
+      unlock(adventureId, partyId, stepId, actor) {
+        mutate((s) => {
+          const title = s.adventures.find((a) => a.id === adventureId)?.steps.find((x) => x.id === stepId)?.title ?? "step";
+          const next = withControl(s, adventureId, (c) =>
+            c.unlocks.some((u) => u.partyId === partyId && u.stepId === stepId)
+              ? c
+              : { ...c, unlocks: [...c.unlocks, { partyId, stepId }] },
+          );
+          return withActivity(next, { adventureId, partyId, actor, kind: "admin", text: `unlocked “${title}”` });
+        });
+      },
+      relock(adventureId, partyId, stepId) {
+        mutate((s) =>
+          withControl(s, adventureId, (c) => ({
+            ...c,
+            unlocks: c.unlocks.filter((u) => !(u.partyId === partyId && u.stepId === stepId)),
+          })),
+        );
+      },
+    },
+    live: {
+      log(entry) {
+        mutate((s) => withActivity(s, entry));
+      },
+      setPosition(pos) {
+        mutate((s) => ({
+          ...s,
+          positions: [
+            ...s.positions.filter((p) => !(p.userId === pos.userId && p.adventureId === pos.adventureId)),
+            { ...pos, at: new Date().toISOString() },
+          ],
+        }));
+      },
+      clearPosition(userId, adventureId) {
+        mutate((s) => ({
+          ...s,
+          positions: s.positions.filter((p) => !(p.userId === userId && p.adventureId === adventureId)),
+        }));
+      },
+      notify(adventureId, partyId, text, from) {
+        mutate((s) =>
+          withActivity(
+            { ...s, notices: [...s.notices, { id: newId("nt"), adventureId, partyId, text, from, at: new Date().toISOString() }].slice(-100) },
+            { adventureId, partyId, actor: from, kind: "notice", text: `sent “${text}”` },
+          ),
+        );
+      },
+    },
     people: {
       rename(userId, name) {
         mutate((s) => ({
@@ -284,28 +389,42 @@ function createLocalRepository(): AdventureRepository {
         mutate((s) =>
           s.progress.some((p) => p.adventureId === adventureId && p.partyId === partyId && p.stepId === stepId)
             ? s
-            : {
-                ...s,
-                progress: [
-                  ...s.progress,
-                  { adventureId, partyId, stepId, completedBy, completedAt: new Date().toISOString() },
-                ],
-              },
+            : withActivity(
+                {
+                  ...s,
+                  progress: [
+                    ...s.progress,
+                    { adventureId, partyId, stepId, completedBy, completedAt: new Date().toISOString() },
+                  ],
+                },
+                { adventureId, partyId, actor: completedBy, kind: "step", text: `completed “${stepTitle(s, adventureId, stepId)}”` },
+              ),
         );
       },
-      undo(adventureId, partyId, stepId) {
-        mutate((s) => ({
-          ...s,
-          progress: s.progress.filter(
-            (p) => !(p.adventureId === adventureId && p.partyId === partyId && p.stepId === stepId),
-          ),
-        }));
+      undo(adventureId, partyId, stepId, actor) {
+        mutate((s) => {
+          const next = {
+            ...s,
+            progress: s.progress.filter(
+              (p) => !(p.adventureId === adventureId && p.partyId === partyId && p.stepId === stepId),
+            ),
+          };
+          return actor
+            ? withActivity(next, { adventureId, partyId, actor, kind: "admin", text: `reopened “${stepTitle(s, adventureId, stepId)}”` })
+            : next;
+        });
       },
-      resetParty(adventureId, partyId) {
-        mutate((s) => ({
-          ...s,
-          progress: s.progress.filter((p) => !(p.adventureId === adventureId && p.partyId === partyId)),
-        }));
+      resetParty(adventureId, partyId, actor) {
+        mutate((s) => {
+          const next = {
+            ...s,
+            progress: s.progress.filter((p) => !(p.adventureId === adventureId && p.partyId === partyId)),
+            controls: s.controls.map((c) =>
+              c.adventureId === adventureId ? { ...c, unlocks: c.unlocks.filter((u) => u.partyId !== partyId) } : c,
+            ),
+          };
+          return actor ? withActivity(next, { adventureId, partyId, actor, kind: "admin", text: "reset team progress" }) : next;
+        });
       },
     },
   };

@@ -7,7 +7,7 @@ import { MapContext, type MapHandle } from "./map/MapContext";
 import type { MapInstance, MapLibreNS } from "./map/maplibre";
 import PlacementOverlay from "./map/PlacementOverlay";
 import Dock, { type DockItem } from "./hud/Dock";
-import { IconCompass, IconFlag, IconMemories, IconShield, IconUser } from "./hud/icons";
+import { IconCompass, IconFlag, IconGps, IconMemories, IconShield, IconTarget, IconUser } from "./hud/icons";
 import AdventureDossier from "./adventures/AdventureDossier";
 import AdventureEditor from "./adventures/AdventureEditor";
 import AdventureMarker from "./adventures/AdventureMarker";
@@ -18,6 +18,8 @@ import StepList from "./steps/StepList";
 import StepMarkers from "./steps/StepMarkers";
 import StepsDesigner from "./steps/StepsDesigner";
 import TeamsSection from "./teams/TeamsSection";
+import LiveControlPanel from "./live/LiveControlPanel";
+import PlayerMarkers from "./live/PlayerMarkers";
 import { ToastProvider, useToast } from "./hud/Toasts";
 import Avatar from "./auth/Avatar";
 import AccountPanel from "./auth/AccountPanel";
@@ -35,7 +37,7 @@ import { canEditContent, isAdmin } from "@/lib/auth/permissions";
 import { useAppState, useRepository } from "@/lib/data/hooks";
 import { deleteBlob } from "@/lib/data/media";
 import type { AdventureStep, LngLat, Photo } from "@/lib/data/types";
-import { completedSet, rewardText } from "@/lib/steps";
+import { completedSet, controlSets, rewardText, stepState } from "@/lib/steps";
 import { joinBlockReason } from "@/lib/teams";
 import { prepareUpload, type PreparedUpload } from "@/lib/upload";
 
@@ -53,6 +55,7 @@ type PanelState =
   | { type: "admin" }
   | { type: "adventures" }
   | { type: "myPhotos" }
+  | { type: "live" }
   | { type: "mission"; highlightId?: string }
   | { type: "designer"; adventureId: string; stepId: string | null }
   | null;
@@ -72,10 +75,13 @@ function AdventureMapInner() {
   const [openAdventureId, setOpenAdventureId] = useState<string | null>(null);
   const [editor, setEditor] = useState<{ photoId: string; adventureId?: string } | null>(null);
   const [trackId, setTrackId] = useState<string | null>(null);
+  const [liveId, setLiveId] = useState<string | null>(null);
+  const [sharing, setSharing] = useState<string | null>(null);
+  const seenNotices = useRef<Set<string> | null>(null);
   const [routeId, setRouteId] = useState<string | null>(null);
   const [pickStep, setPickStep] = useState<{ adventureId: string; step: AdventureStep } | null>(null);
   const introDone = useRef(false);
-  const { user, auth } = useAuth();
+  const { user, auth, users } = useAuth();
   const admin = isAdmin(user);
   const author = user ? { authorId: user.id, authorName: user.name } : null;
 
@@ -216,9 +222,14 @@ function AdventureMapInner() {
   };
   const myAdventures = visibleAdventures.filter((a) => isMember(a.id) && a.steps.length);
   const trackedAdventure = myAdventures.find((a) => a.id === trackId) ?? myAdventures[0] ?? null;
+  const liveAdventure =
+    panel?.type === "live" && admin
+      ? visibleAdventures.find((a) => a.id === liveId) ?? visibleAdventures[0] ?? null
+      : null;
   const designerAdventure =
     panel?.type === "designer" ? state.adventures.find((a) => a.id === panel.adventureId) ?? null : null;
   const routeAdventure =
+    liveAdventure ??
     designerAdventure ??
     (pickStep ? state.adventures.find((a) => a.id === pickStep.adventureId) : null) ??
     visibleAdventures.find((a) => a.id === routeId) ??
@@ -235,6 +246,73 @@ function AdventureMapInner() {
     });
   };
 
+  const controlFor = (adventureId: string) => {
+    const adv = state.adventures.find((a) => a.id === adventureId);
+    return controlSets(state.controls, adventureId, partyIdFor(adventureId), adv?.steps ?? []);
+  };
+
+  // Live location sharing for the tracked adventure (throttled writes).
+  useEffect(() => {
+    if (!sharing || !user || !("geolocation" in navigator)) return;
+    let last = 0;
+    const id = navigator.geolocation.watchPosition(
+      (pos) => {
+        if (Date.now() - last < 10000) return;
+        last = Date.now();
+        repo.live.setPosition({
+          userId: user.id,
+          userName: user.name,
+          adventureId: sharing,
+          lngLat: [pos.coords.longitude, pos.coords.latitude],
+        });
+      },
+      () => undefined,
+      { enableHighAccuracy: true, maximumAge: 15000 },
+    );
+    return () => navigator.geolocation.clearWatch(id);
+  }, [sharing, user, repo]);
+
+  // Toast new admin messages addressed to me / my team.
+  useEffect(() => {
+    if (!user) return;
+    const mine = state.notices.filter((n) => {
+      const m = state.memberships.find((x) => x.adventureId === n.adventureId && x.userId === user.id);
+      return m && (n.partyId === null || n.partyId === m.teamId);
+    });
+    if (!seenNotices.current) {
+      seenNotices.current = new Set(mine.map((n) => n.id));
+      return;
+    }
+    for (const n of mine) {
+      if (seenNotices.current.has(n.id)) continue;
+      seenNotices.current.add(n.id);
+      if (n.from !== user.name) toast({ title: `Message · ${n.from}`, body: n.text, tone: "reward" });
+    }
+  }, [state.notices, state.memberships, user, toast]);
+
+  const simulateCrew = (adv: (typeof state.adventures)[number]) => {
+    const photo = photos.find((p) => p.id === adv.photoId);
+    const crew = state.memberships.filter((m) => m.adventureId === adv.id);
+    for (const m of crew) {
+      const done = completedSet(state.progress, adv.id, m.teamId ?? m.userId);
+      const { unlocked } = controlSets(state.controls, adv.id, m.teamId ?? m.userId, adv.steps);
+      const next = adv.steps.find((x) => x.lngLat && stepState(x, done, unlocked) === "available");
+      const lastDone = [...adv.steps].reverse().find((x) => x.lngLat && done.has(x.id));
+      const base = next?.lngLat ?? lastDone?.lngLat ?? photo?.lngLat;
+      if (!base) continue;
+      // Spread players out on the way to their next step.
+      const jitter = () => (Math.random() - 0.5) * 0.02;
+      repo.live.setPosition({
+        userId: m.userId,
+        userName: m.userName,
+        adventureId: adv.id,
+        lngLat: [base[0] + jitter(), base[1] + jitter()],
+        simulated: true,
+      });
+    }
+    toast({ title: "Crew positions simulated", body: `${crew.length} players placed near their next step.` });
+  };
+
   const onStepMarker = (step: AdventureStep) => {
     if (!routeAdventure) return;
     if (panel?.type === "designer") return setPanel({ ...panel, stepId: step.id });
@@ -249,6 +327,7 @@ function AdventureMapInner() {
     ...(myAdventures.length ? [{ id: "mission", label: "Mission", icon: <IconCompass /> }] : []),
     { id: "adventures", label: "Adventures", icon: <IconFlag />, badge: visibleAdventures.length || undefined },
     { id: "library", label: "Photos", icon: <IconMemories />, badge: photos.length || undefined },
+    ...(admin ? [{ id: "live", label: "Live", icon: <IconTarget /> }] : []),
     ...(admin ? [{ id: "admin", label: "Admin", icon: <IconShield /> }] : []),
     {
       id: "account",
@@ -303,10 +382,25 @@ function AdventureMapInner() {
             key={routeAdventure.id}
             adventure={routeAdventure}
             done={doneFor(routeAdventure.id)}
+            paused={controlFor(routeAdventure.id).paused}
+            unlocked={controlFor(routeAdventure.id).unlocked}
             selectedId={
               panel?.type === "designer" ? panel.stepId : panel?.type === "mission" ? panel.highlightId ?? null : null
             }
             onSelect={onStepMarker}
+          />
+        ) : null}
+
+        {liveAdventure ? (
+          <PlayerMarkers adventure={liveAdventure} positions={state.positions} memberships={state.memberships} users={users} meId={user?.id} />
+        ) : trackedAdventure && membershipFor(trackedAdventure.id) ? (
+          <PlayerMarkers
+            adventure={trackedAdventure}
+            positions={state.positions}
+            memberships={state.memberships}
+            users={users}
+            teamFilter={membershipFor(trackedAdventure.id)?.teamId ?? null}
+            meId={user?.id}
           />
         ) : null}
 
@@ -394,10 +488,62 @@ function AdventureMapInner() {
                 setRouteId(id);
               }}
               done={doneFor(trackedAdventure.id)}
+              paused={controlFor(trackedAdventure.id).paused}
+              unlocked={controlFor(trackedAdventure.id).unlocked}
+              header={
+                <div className="mb-3 flex flex-col gap-2">
+                  {controlFor(trackedAdventure.id).allPaused ? (
+                    <p className="tracker-paused">❚❚ Paused by the game master — hold position.</p>
+                  ) : null}
+                  {state.notices
+                    .filter(
+                      (n) =>
+                        n.adventureId === trackedAdventure.id &&
+                        (n.partyId === null || n.partyId === membershipFor(trackedAdventure.id)?.teamId),
+                    )
+                    .slice(-3)
+                    .reverse()
+                    .map((n) => (
+                      <p key={n.id} className="tracker-notice">
+                        <b>{n.from}:</b> {n.text}
+                      </p>
+                    ))}
+                  <button
+                    type="button"
+                    className={`hud-btn hud-btn-sm ${sharing === trackedAdventure.id ? "hud-btn-primary" : ""}`}
+                    onClick={() => {
+                      if (!user) return;
+                      if (sharing === trackedAdventure.id) {
+                        setSharing(null);
+                        repo.live.clearPosition(user.id, trackedAdventure.id);
+                      } else {
+                        setSharing(trackedAdventure.id);
+                        toast({ title: "Sharing live location", body: "Your team and the game master can see you." });
+                      }
+                    }}
+                  >
+                    <IconGps size={14} /> {sharing === trackedAdventure.id ? "Sharing location · stop" : "Share live location"}
+                  </button>
+                </div>
+              }
               highlightId={panel.highlightId}
               partyLabel={teamFor(trackedAdventure.id) ? `Team ${teamFor(trackedAdventure.id)!.name}` : user?.name ?? ""}
               onComplete={(step) => completeStep(trackedAdventure.id, step, "manual")}
               onLocateStep={(step) => step.lngLat && flyTo(step.lngLat, 13)}
+              onClose={() => setPanel(null)}
+            />
+          ) : null}
+
+          {panel?.type === "live" && admin && !pickStep ? (
+            <LiveControlPanel
+              adventures={visibleAdventures}
+              activeId={liveAdventure?.id ?? ""}
+              onActiveChange={setLiveId}
+              state={state}
+              users={users}
+              actor={user?.name ?? "Admin"}
+              onLocate={(lngLat) => flyTo(lngLat, 14)}
+              onSimulate={simulateCrew}
               onClose={() => setPanel(null)}
             />
           ) : null}
@@ -676,16 +822,29 @@ function AdventureMapInner() {
                     </button>
                   ) : null}
                   {admin ? (
-                    <button
-                      type="button"
-                      className="hud-btn hud-btn-sm"
-                      onClick={() => {
-                        setOpenAdventureId(null);
-                        setPanel({ type: "designer", adventureId: openAdventure.id, stepId: null });
-                      }}
-                    >
-                      Design steps
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        className="hud-btn hud-btn-sm"
+                        onClick={() => {
+                          setOpenAdventureId(null);
+                          setPanel({ type: "designer", adventureId: openAdventure.id, stepId: null });
+                        }}
+                      >
+                        Design steps
+                      </button>
+                      <button
+                        type="button"
+                        className="hud-btn hud-btn-sm"
+                        onClick={() => {
+                          setOpenAdventureId(null);
+                          setLiveId(openAdventure.id);
+                          setPanel({ type: "live" });
+                        }}
+                      >
+                        Live control
+                      </button>
+                    </>
                   ) : null}
                 </div>
               </div>

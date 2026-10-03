@@ -11,6 +11,7 @@ export default function StepList({
   adventure,
   done,
   paused,
+  unlocked,
   highlightId,
   actions,
   compact,
@@ -18,6 +19,7 @@ export default function StepList({
   adventure: Adventure;
   done: Set<string>;
   paused?: Set<string>;
+  unlocked?: Set<string>;
   highlightId?: string | null;
   actions?: (step: AdventureStep, state: "done" | "available" | "locked" | "paused") => ReactNode;
   compact?: boolean;
@@ -27,7 +29,7 @@ export default function StepList({
   return (
     <ol className="step-list" style={{ ["--adv" as string]: adventure.look.color }}>
       {adventure.steps.map((s, i) => {
-        const base = stepState(s, done);
+        const base = stepState(s, done, unlocked);
         const st = paused?.has(s.id) && base !== "done" ? "paused" : base;
         return (
           <li key={s.id} className={`step-row is-${st} ${highlightId === s.id ? "is-highlight" : ""}`} data-step={s.id}>
@@ -37,6 +39,7 @@ export default function StepList({
                 <p className="step-row-title">{s.title}</p>
                 <span className={`step-chip is-${st}`}>{STATE_LABEL[st]}</span>
               </div>
+              {unlocked?.has(s.id) && base !== "done" ? <p className="step-row-meta text-amber-300">Unlocked by admin</p> : null}
               {!compact && s.instruction ? <p className="step-row-text">{s.instruction}</p> : null}
               <p className="step-row-meta">
                 {s.placeName || (s.lngLat ? "Pinned on map" : "Anywhere")}

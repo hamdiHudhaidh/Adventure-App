@@ -16,6 +16,7 @@ export default function MissionTracker({
   onActiveChange,
   done,
   paused,
+  unlocked,
   highlightId,
   partyLabel,
   onComplete,
@@ -28,6 +29,7 @@ export default function MissionTracker({
   onActiveChange: (id: string) => void;
   done: Set<string>;
   paused?: Set<string>;
+  unlocked?: Set<string>;
   highlightId?: string | null;
   partyLabel: string;
   onComplete: (step: AdventureStep, how: "gps" | "manual") => void;
@@ -107,6 +109,7 @@ export default function MissionTracker({
         adventure={adventure}
         done={done}
         paused={paused}
+        unlocked={unlocked}
         highlightId={highlightId}
         actions={(s, st) => (
           <>

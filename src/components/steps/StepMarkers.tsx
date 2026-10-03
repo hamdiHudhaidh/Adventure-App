@@ -11,12 +11,14 @@ export default function StepMarkers({
   adventure,
   done,
   paused,
+  unlocked,
   selectedId,
   onSelect,
 }: {
   adventure: Adventure;
   done: Set<string>;
   paused?: Set<string>;
+  unlocked?: Set<string>;
   selectedId?: string | null;
   onSelect: (step: AdventureStep) => void;
 }) {
@@ -27,7 +29,7 @@ export default function StepMarkers({
     const out: MapLine[] = [];
     for (const s of adventure.steps) {
       if (!s.lngLat) continue;
-      const st = stepState(s, done);
+      const st = stepState(s, done, unlocked);
       for (const pid of s.prerequisites) {
         const p = byId.get(pid);
         if (!p?.lngLat) continue;
@@ -39,14 +41,14 @@ export default function StepMarkers({
       }
     }
     return out;
-  }, [adventure.steps, done, color]);
+  }, [adventure.steps, done, unlocked, color]);
 
   return (
     <>
       <MapLines id={`route-${adventure.id}`} lines={lines} />
       {placed.map((s) => {
         const index = adventure.steps.indexOf(s) + 1;
-        const st: StepState | "paused" = paused?.has(s.id) && !done.has(s.id) ? "paused" : stepState(s, done);
+        const st: StepState | "paused" = paused?.has(s.id) && !done.has(s.id) ? "paused" : stepState(s, done, unlocked);
         return (
           <MapMarker key={s.id} lngLat={s.lngLat!} anchor="center" zIndex={selectedId === s.id ? 90 : 65}>
             <button

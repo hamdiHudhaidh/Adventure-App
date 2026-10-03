@@ -100,4 +100,50 @@ export type AppState = {
   adventures: Adventure[];
   memberships: Membership[];
   progress: StepProgress[];
+  controls: AdventureControl[];
+  activity: ActivityEntry[];
+  positions: PlayerPosition[];
+  notices: Notice[];
+};
+
+/** Live flow control set by the admin while an adventure runs. */
+export type AdventureControl = {
+  adventureId: string;
+  /** Whole adventure paused: no check-ins. */
+  paused: boolean;
+  /** Individual steps paused for everyone. */
+  pausedSteps: string[];
+  /** Steps force-unlocked for a party, ignoring prerequisites. */
+  unlocks: { partyId: string; stepId: string }[];
+};
+
+export type ActivityKind = "join" | "step" | "admin" | "notice" | "location";
+
+export type ActivityEntry = {
+  id: string;
+  adventureId: string;
+  partyId: string | null;
+  actor: string;
+  text: string;
+  kind: ActivityKind;
+  at: string;
+};
+
+export type PlayerPosition = {
+  userId: string;
+  userName: string;
+  adventureId: string;
+  lngLat: LngLat;
+  at: string;
+  simulated?: boolean;
+};
+
+/** Admin message to a team (partyId) or to everyone in the adventure (null). */
+export type Notice = {
+  id: string;
+  adventureId: string;
+  partyId: string | null;
+  from: string;
+  text: string;
+  at: string;
 };
