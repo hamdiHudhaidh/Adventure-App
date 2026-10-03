@@ -27,7 +27,41 @@ export type Photo = {
   sample?: boolean;
 };
 
+export type MarkerGlyph = "diamond" | "crest" | "flame" | "compass" | "crown" | "eye";
+
+/** The unique look of an adventure on the map. */
+export type AdventureLook = { glyph: MarkerGlyph; color: string };
+
+export type AdventureBrief = {
+  codename: string;
+  summary: string;
+  objective: string;
+};
+
+export type AdventureStatus = "draft" | "open" | "active" | "completed";
+
+export type Adventure = {
+  id: string;
+  /** The picture this adventure is attached to (its cover + map position). */
+  photoId: string;
+  name: string;
+  brief: AdventureBrief;
+  look: AdventureLook;
+  status: AdventureStatus;
+  createdBy: string;
+  createdAt: string;
+};
+
+export type Membership = {
+  adventureId: string;
+  userId: string;
+  userName: string;
+  joinedAt: string;
+};
+
 export type AppState = {
   schema: number;
   photos: Photo[];
+  adventures: Adventure[];
+  memberships: Membership[];
 };

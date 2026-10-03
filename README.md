@@ -9,6 +9,7 @@ Gamified adventure map app (Next.js static export + MapLibre, served on GitHub P
 | 1 | `feature/real-map` | Real MapLibre map with the neon atlas style and game HUD |
 | 2 | `feature/photo-map` | Photos on the map (Apple-Photos-style clusters, EXIF GPS, viewer) |
 | 3 | `feature/admin-auth` | Accounts with an **admin** role (mock local auth behind `AuthService`) |
+| 4 | `feature/adventures` | Admin attaches an **adventure** to a picture: name, brief, unique marker, Join |
 
 ### Feature 2 — Photo map (`feature/photo-map`)
 
@@ -31,6 +32,15 @@ Gamified adventure map app (Next.js static export + MapLibre, served on GitHub P
 - `src/lib/auth/service.ts` is the only auth API (local implementation: PBKDF2 password hashes in
   localStorage, session in sessionStorage + optional "keep me signed in"). Two tabs can be signed in
   as different users. Swap for Supabase Auth + a `profiles.role` column later.
+
+### Feature 4 — Adventures on pictures (`feature/adventures`)
+
+- Admin: open any photo → **Attach adventure** → name, codename, brief, objective, a unique map marker
+  (6 shapes × 6 colours, live preview) and status (draft / open / active / done). Drafts are admin-only.
+- Every adventure shows on the map as a raised banner above its picture. Tap it (or use the
+  **Adventures** dock list) for the dossier with crew list and a **Join adventure** button
+  (sign-in required). Admins can edit or delete from the dossier.
+- Seed adventures: *Sands of Diriyah* (At-Turaif) and *Crimson Run* (Red Sands).
 
 ### Data layer (mock, swappable for Supabase)
 

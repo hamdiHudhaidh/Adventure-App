@@ -9,7 +9,25 @@ import { BASE_PATH } from "../basePath";
 import { newId } from "./ids";
 import { deleteBlob } from "./media";
 import { createSeedState, SCHEMA_VERSION } from "./seed";
-import type { AppState, LngLat, LocationSource, MediaRef, Photo } from "./types";
+import type {
+  Adventure,
+  AdventureBrief,
+  AdventureLook,
+  AdventureStatus,
+  AppState,
+  LngLat,
+  LocationSource,
+  MediaRef,
+  Photo,
+} from "./types";
+
+export type AdventureInput = {
+  photoId: string;
+  name: string;
+  brief: AdventureBrief;
+  look: AdventureLook;
+  status: AdventureStatus;
+};
 
 export type NewPhotoInput = {
   lngLat: LngLat;
@@ -31,6 +49,13 @@ export interface AdventureRepository {
     add(input: NewPhotoInput): Photo;
     update(id: string, patch: Partial<Pick<Photo, "caption" | "placeName" | "lngLat" | "locationSource">>): void;
     remove(id: string): void;
+  };
+  adventures: {
+    create(input: AdventureInput, createdBy: string): Adventure;
+    update(id: string, patch: Partial<AdventureInput>): void;
+    remove(id: string): void;
+    join(adventureId: string, user: { id: string; name: string }): void;
+    leave(adventureId: string, userId: string): void;
   };
 }
 
@@ -115,7 +140,56 @@ function createLocalRepository(): AdventureRepository {
       remove(id) {
         const target = current().photos.find((p) => p.id === id);
         if (target?.media.source === "local") void deleteBlob(target.media.blobId);
-        mutate((s) => ({ ...s, photos: s.photos.filter((p) => p.id !== id) }));
+        mutate((s) => ({
+          ...s,
+          photos: s.photos.filter((p) => p.id !== id),
+          // An adventure lives on its picture; removing the picture removes it.
+          adventures: s.adventures.filter((a) => a.photoId !== id),
+        }));
+      },
+    },
+    adventures: {
+      create(input, createdBy) {
+        const adventure: Adventure = {
+          id: newId("adv"),
+          createdBy,
+          createdAt: new Date().toISOString(),
+          ...input,
+        };
+        mutate((s) => ({ ...s, adventures: [...s.adventures, adventure] }));
+        return adventure;
+      },
+      update(id, patch) {
+        mutate((s) => ({
+          ...s,
+          adventures: s.adventures.map((a) => (a.id === id ? { ...a, ...patch } : a)),
+        }));
+      },
+      remove(id) {
+        mutate((s) => ({
+          ...s,
+          adventures: s.adventures.filter((a) => a.id !== id),
+          memberships: s.memberships.filter((m) => m.adventureId !== id),
+        }));
+      },
+      join(adventureId, user) {
+        mutate((s) =>
+          s.memberships.some((m) => m.adventureId === adventureId && m.userId === user.id)
+            ? s
+            : {
+                ...s,
+                memberships: [
+                  ...s.memberships,
+                  { adventureId, userId: user.id, userName: user.name, joinedAt: new Date().toISOString() },
+                ],
+              },
+        );
+      },
+      leave(adventureId, userId) {
+        mutate((s) => ({
+          ...s,
+          memberships: s.memberships.filter((m) => !(m.adventureId === adventureId && m.userId === userId)),
+        }));
       },
     },
   };

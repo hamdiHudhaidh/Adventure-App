@@ -7,7 +7,12 @@ import { MapContext, type MapHandle } from "./map/MapContext";
 import type { MapInstance, MapLibreNS } from "./map/maplibre";
 import PlacementOverlay from "./map/PlacementOverlay";
 import Dock, { type DockItem } from "./hud/Dock";
-import { IconMemories, IconShield, IconUser } from "./hud/icons";
+import { IconFlag, IconMemories, IconShield, IconUser } from "./hud/icons";
+import AdventureDossier from "./adventures/AdventureDossier";
+import AdventureEditor from "./adventures/AdventureEditor";
+import AdventureMarker from "./adventures/AdventureMarker";
+import AdventuresPanel from "./adventures/AdventuresPanel";
+import { LookBadge } from "./adventures/looks";
 import { ToastProvider, useToast } from "./hud/Toasts";
 import Avatar from "./auth/Avatar";
 import AccountPanel from "./auth/AccountPanel";
@@ -37,6 +42,7 @@ type PanelState =
   | { type: "cluster"; cluster: PhotoCluster }
   | { type: "account" }
   | { type: "admin" }
+  | { type: "adventures" }
   | null;
 
 function AdventureMapInner() {
@@ -49,6 +55,8 @@ function AdventureMapInner() {
   const [pending, setPending] = useState<PreparedUpload[]>([]);
   const [uploading, setUploading] = useState(0);
   const [authOpen, setAuthOpen] = useState(false);
+  const [openAdventureId, setOpenAdventureId] = useState<string | null>(null);
+  const [editor, setEditor] = useState<{ photoId: string; adventureId?: string } | null>(null);
   const introDone = useRef(false);
   const { user, auth } = useAuth();
   const admin = isAdmin(user);
@@ -154,7 +162,17 @@ function AdventureMapInner() {
 
   const openViewer = (list: Photo[], index: number) => setViewer({ ids: list.map((p) => p.id), index });
 
+  const visibleAdventures = state.adventures.filter((a) => admin || a.status !== "draft");
+  const membersOf = (adventureId: string) => state.memberships.filter((m) => m.adventureId === adventureId);
+  const isMember = (adventureId: string) =>
+    !!user && state.memberships.some((m) => m.adventureId === adventureId && m.userId === user.id);
+  const adventureForPhoto = (photoId: string) => visibleAdventures.find((a) => a.photoId === photoId);
+  const openAdventure = visibleAdventures.find((a) => a.id === openAdventureId) ?? null;
+  const editorPhoto = editor ? photos.find((p) => p.id === editor.photoId) : undefined;
+  const editorAdventure = editor?.adventureId ? state.adventures.find((a) => a.id === editor.adventureId) : undefined;
+
   const dockItems: DockItem[] = [
+    { id: "adventures", label: "Adventures", icon: <IconFlag />, badge: visibleAdventures.length || undefined },
     { id: "library", label: "Photos", icon: <IconMemories />, badge: photos.length || undefined },
     ...(admin ? [{ id: "admin", label: "Admin", icon: <IconShield /> }] : []),
     {
@@ -190,6 +208,21 @@ function AdventureMapInner() {
           }}
         />
 
+        {visibleAdventures.map((a) => {
+          const photo = photos.find((p) => p.id === a.photoId);
+          if (!photo) return null;
+          return (
+            <AdventureMarker
+              key={a.id}
+              adventure={a}
+              lngLat={photo.lngLat}
+              members={membersOf(a.id).length}
+              joined={isMember(a.id)}
+              onOpen={() => setOpenAdventureId(a.id)}
+            />
+          );
+        })}
+
         <MapHud viewport={viewport} status={status} />
 
         <div className="pointer-events-none absolute inset-0 z-[1100]">
@@ -224,6 +257,27 @@ function AdventureMapInner() {
                 setViewer(null);
                 toast({ title: "Demo content reset", body: "Sample photos restored." });
               }}
+            />
+          ) : null}
+
+          {panel?.type === "adventures" && !current ? (
+            <AdventuresPanel
+              adventures={visibleAdventures}
+              photos={photos}
+              memberships={state.memberships}
+              userId={user?.id ?? null}
+              isAdmin={admin}
+              onClose={() => setPanel(null)}
+              onOpen={(a) => {
+                const photo = photos.find((p) => p.id === a.photoId);
+                if (photo) flyTo(photo.lngLat, 12);
+                setOpenAdventureId(a.id);
+              }}
+              footer={
+                admin ? (
+                  <p className="hud-note">To create one: open a photo → “Attach adventure”.</p>
+                ) : null
+              }
             />
           ) : null}
 
@@ -321,6 +375,99 @@ function AdventureMapInner() {
             onDelete={(p) => {
               repo.photos.remove(p.id);
               toast({ title: "Photo deleted" });
+            }}
+            extra={(p) => {
+              const adv = adventureForPhoto(p.id);
+              if (adv) {
+                return (
+                  <button
+                    type="button"
+                    className="adv-inline"
+                    style={{ ["--adv" as string]: adv.look.color }}
+                    onClick={() => {
+                      setViewer(null);
+                      setOpenAdventureId(adv.id);
+                    }}
+                  >
+                    <LookBadge look={adv.look} size={34} />
+                    <span className="min-w-0">
+                      <span className="hud-kicker block">Adventure</span>
+                      <span className="adv-inline-name">{adv.name}</span>
+                    </span>
+                  </button>
+                );
+              }
+              return admin ? (
+                <button
+                  type="button"
+                  className="hud-btn hud-btn-ghost mt-4 w-full"
+                  onClick={() => {
+                    setViewer(null);
+                    setEditor({ photoId: p.id });
+                  }}
+                >
+                  <IconFlag size={16} /> Attach adventure
+                </button>
+              ) : null;
+            }}
+          />
+        ) : null}
+
+        {openAdventure ? (
+          <AdventureDossier
+            adventure={openAdventure}
+            photo={photos.find((p) => p.id === openAdventure.photoId)}
+            members={membersOf(openAdventure.id)}
+            joined={isMember(openAdventure.id)}
+            isAdmin={admin}
+            onClose={() => setOpenAdventureId(null)}
+            onJoin={() => {
+              if (!user) return setAuthOpen(true);
+              repo.adventures.join(openAdventure.id, user);
+              toast({ title: "You joined", body: openAdventure.name, tone: "reward" });
+            }}
+            onLeave={() => {
+              if (!user) return;
+              repo.adventures.leave(openAdventure.id, user.id);
+              toast({ title: "Left adventure", body: openAdventure.name });
+            }}
+            onEdit={() => {
+              setEditor({ photoId: openAdventure.photoId, adventureId: openAdventure.id });
+              setOpenAdventureId(null);
+            }}
+            onLocate={() => {
+              const photo = photos.find((p) => p.id === openAdventure.photoId);
+              setOpenAdventureId(null);
+              if (photo) flyTo(photo.lngLat, 13);
+            }}
+          />
+        ) : null}
+
+        {editor && editorPhoto && admin ? (
+          <AdventureEditor
+            photo={editorPhoto}
+            initial={editorAdventure}
+            onCancel={() => setEditor(null)}
+            onDelete={
+              editorAdventure
+                ? () => {
+                    repo.adventures.remove(editorAdventure.id);
+                    setEditor(null);
+                    toast({ title: "Adventure deleted" });
+                  }
+                : undefined
+            }
+            onSave={(input) => {
+              if (editorAdventure) {
+                repo.adventures.update(editorAdventure.id, input);
+                setOpenAdventureId(editorAdventure.id);
+                toast({ title: "Adventure saved", body: input.name });
+              } else if (user) {
+                const created = repo.adventures.create(input, user.id);
+                setOpenAdventureId(created.id);
+                toast({ title: "Adventure attached", body: input.name, tone: "reward" });
+              }
+              setEditor(null);
             }}
           />
         ) : null}

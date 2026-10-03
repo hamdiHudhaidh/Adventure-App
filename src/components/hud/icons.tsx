@@ -120,3 +120,10 @@ export const IconUser = (p: IconProps) => (
     <path d="M4 21c1-4 4.5-6 8-6s7 2 8 6" />
   </Base>
 );
+
+export const IconFlag = (p: IconProps) => (
+  <Base {...p}>
+    <path d="M5 21V4" />
+    <path d="M5 4h12l-2 4 2 4H5" />
+  </Base>
+);
