@@ -54,7 +54,7 @@ export default function MapHud({
         </div>
       </header>
 
-      <footer className="absolute inset-x-0 bottom-0 flex items-end justify-center px-5 py-4 sm:px-6">
+      <footer className="absolute inset-x-0 bottom-0 hidden items-end justify-center px-5 py-4 sm:flex sm:px-6">
         <div className="hud-chip hud-chip-quiet">
           {status === "ready" ? "Pan · Zoom to explore" : "Acquiring signal"}
         </div>

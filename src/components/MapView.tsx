@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import adventureStyle from "@/lib/adventureMapStyle.json";
 import type { MapLoadStatus, MapViewport } from "./MapHud";
+import type { MapInstance, MapLibreNS } from "./map/maplibre";
 
 const WORLD_CENTER: [number, number] = [20, 0];
 const WORLD_ZOOM = 2.2;
@@ -12,28 +13,6 @@ const MAPLIBRE_CSS = "https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css";
 // Pin tile URL so we don't depend on TileJSON fetch succeeding on every network
 const TILE_URL =
   "https://tiles.openfreemap.org/planet/20260913_164504_pt/{z}/{x}/{y}.pbf";
-
-type MapInstance = {
-  addControl: (control: unknown, position?: string) => void;
-  on: (event: string, handler: (e?: { error?: { message?: string } }) => void) => void;
-  off: (event: string, handler: (e?: { error?: { message?: string } }) => void) => void;
-  remove: () => void;
-  resize: () => void;
-  getZoom: () => number;
-  getCenter: () => { lng: number; lat: number };
-};
-
-type MapLibreNS = {
-  Map: new (options: Record<string, unknown>) => MapInstance;
-  NavigationControl: new (options?: Record<string, unknown>) => unknown;
-  ScaleControl: new (options?: Record<string, unknown>) => unknown;
-};
-
-declare global {
-  interface Window {
-    maplibregl?: MapLibreNS;
-  }
-}
 
 function ensureCss() {
   if (document.getElementById("maplibre-css")) return;
@@ -80,16 +59,23 @@ function readViewport(map: MapInstance): MapViewport {
 export default function MapView({
   onViewportChange,
   onStatusChange,
+  onMapReady,
 }: {
   onViewportChange: (viewport: MapViewport) => void;
   onStatusChange: (status: MapLoadStatus, error: string | null) => void;
+  /** Fired once the style has loaded so overlays (pins, routes) can attach. */
+  onMapReady?: (map: MapInstance | null, maplibregl: MapLibreNS | null) => void;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapInstance | null>(null);
   const onViewportChangeRef = useRef(onViewportChange);
   const onStatusChangeRef = useRef(onStatusChange);
-  onViewportChangeRef.current = onViewportChange;
-  onStatusChangeRef.current = onStatusChange;
+  const onMapReadyRef = useRef(onMapReady);
+  useEffect(() => {
+    onViewportChangeRef.current = onViewportChange;
+    onStatusChangeRef.current = onStatusChange;
+    onMapReadyRef.current = onMapReady;
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -148,6 +134,7 @@ export default function MapView({
           if (cancelled) return;
           emitViewport();
           onStatusChangeRef.current("ready", null);
+          onMapReadyRef.current?.(map, maplibregl);
         });
 
         map.on("move", emitViewport);
@@ -179,6 +166,7 @@ export default function MapView({
     return () => {
       cancelled = true;
       if (handleResize) window.removeEventListener("resize", handleResize);
+      onMapReadyRef.current?.(null, null);
       mapRef.current?.remove();
       mapRef.current = null;
     };

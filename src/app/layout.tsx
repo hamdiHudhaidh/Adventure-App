@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Orbitron } from "next/font/google";
 import "./globals.css";
 
@@ -20,7 +20,14 @@ const orbitron = Orbitron({
 
 export const metadata: Metadata = {
   title: "Adventure App",
-  description: "Gamified adventure map — Feature 1: real interactive map",
+  description: "Gamified adventure map — missions, memories and team play on a real map",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#050506",
 };
 
 export default function RootLayout({
